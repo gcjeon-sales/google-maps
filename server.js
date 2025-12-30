@@ -252,24 +252,41 @@ app.post('/api/geocode-batch', async (req, res) => {
         continue;
       }
 
-      const searchQuery = place.address || place.name;
-      const encodedQuery = encodeURIComponent(searchQuery);
+      // 장소명으로 먼저 검색 (키워드 검색이 더 정확함)
+      const nameQuery = place.name;
+      const addressQuery = place.address;
 
       try {
-        // 먼저 주소 검색
-        let apiUrl = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodedQuery}`;
-        let response = await fetch(apiUrl, {
-          headers: { 'Authorization': `KakaoAK ${kakaoApiKey}` }
-        });
-        let data = await response.json();
+        let data = { documents: [] };
 
-        if (!data.documents || data.documents.length === 0) {
-          // 키워드 검색으로 시도
-          apiUrl = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodedQuery}`;
-          response = await fetch(apiUrl, {
+        // 1. 먼저 장소명으로 키워드 검색
+        if (nameQuery) {
+          const encodedName = encodeURIComponent(nameQuery);
+          const keywordUrl = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodedName}`;
+          const response = await fetch(keywordUrl, {
             headers: { 'Authorization': `KakaoAK ${kakaoApiKey}` }
           });
           data = await response.json();
+        }
+
+        // 2. 장소명으로 못 찾으면 주소로 검색
+        if ((!data.documents || data.documents.length === 0) && addressQuery) {
+          const encodedAddress = encodeURIComponent(addressQuery);
+          // 주소 검색
+          let apiUrl = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodedAddress}`;
+          let response = await fetch(apiUrl, {
+            headers: { 'Authorization': `KakaoAK ${kakaoApiKey}` }
+          });
+          data = await response.json();
+
+          // 주소 검색도 실패하면 키워드 검색
+          if (!data.documents || data.documents.length === 0) {
+            apiUrl = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodedAddress}`;
+            response = await fetch(apiUrl, {
+              headers: { 'Authorization': `KakaoAK ${kakaoApiKey}` }
+            });
+            data = await response.json();
+          }
         }
 
         if (data.documents && data.documents.length > 0) {
