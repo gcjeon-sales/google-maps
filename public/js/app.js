@@ -32,6 +32,9 @@ function initApp() {
   } else {
     showApiGuideModal();
   }
+
+  // 저장된 화장실 데이터 자동 로드
+  loadSavedToiletData();
 }
 
 function setupEventListeners() {
@@ -51,6 +54,9 @@ function setupEventListeners() {
 
   // 화장실 데이터 업로드
   document.getElementById('toiletFileInput').addEventListener('change', handleToiletFileUpload);
+
+  // 화장실 데이터 초기화
+  document.getElementById('resetToiletBtn').addEventListener('click', resetToiletData);
 
   // 장소 검색
   document.getElementById('placeSearch').addEventListener('input', filterPlaces);
@@ -353,6 +359,48 @@ async function handleTakeoutFileUpload(e) {
 // ============================================
 // 화장실 데이터 처리
 // ============================================
+
+// 저장된 화장실 데이터 자동 로드
+async function loadSavedToiletData() {
+  try {
+    const response = await fetch('/api/toilets');
+    const data = await response.json();
+
+    if (data.success && data.toilets && data.toilets.length > 0) {
+      state.toilets = data.toilets;
+      updateToiletInfoDisplay(data);
+    }
+  } catch (error) {
+    console.error('화장실 데이터 로드 실패:', error);
+  }
+}
+
+// 화장실 정보 표시 업데이트
+function updateToiletInfoDisplay(data) {
+  const infoContainer = document.getElementById('toiletInfo');
+  const countEl = document.getElementById('toiletCount');
+  const regionsEl = document.getElementById('toiletRegions');
+  const updateEl = document.getElementById('toiletUpdate');
+
+  countEl.textContent = `${data.count.toLocaleString()}개 화장실 데이터`;
+
+  if (data.regions && data.regions.length > 0) {
+    regionsEl.textContent = `지역: ${data.regions.join(', ')}`;
+  } else {
+    regionsEl.textContent = '';
+  }
+
+  if (data.lastUpdate) {
+    const updateDate = new Date(data.lastUpdate);
+    updateEl.textContent = `업데이트: ${updateDate.toLocaleDateString('ko-KR')} ${updateDate.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`;
+  } else {
+    updateEl.textContent = '';
+  }
+
+  infoContainer.classList.remove('hidden');
+}
+
+// 화장실 데이터 업로드 (누적)
 async function handleToiletFileUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -369,8 +417,10 @@ async function handleToiletFileUpload(e) {
     const data = await response.json();
     if (data.success) {
       state.toilets = data.toilets;
-      document.getElementById('toiletCount').textContent = `${data.count}개 화장실 데이터 로드됨`;
-      document.getElementById('toiletCount').classList.remove('hidden');
+      updateToiletInfoDisplay(data);
+
+      // 업로드 결과 알림
+      alert(`${data.region} 지역 ${data.newCount.toLocaleString()}개 화장실 데이터가 추가되었습니다.\n총 ${data.count.toLocaleString()}개`);
 
       // 선택된 장소가 있으면 화장실 검색 실행
       if (state.selectedPlace) {
@@ -381,6 +431,30 @@ async function handleToiletFileUpload(e) {
     }
   } catch (error) {
     alert('파일 처리 중 오류가 발생했습니다.');
+    console.error(error);
+  }
+
+  // 파일 입력 초기화 (같은 파일 다시 선택 가능하도록)
+  e.target.value = '';
+}
+
+// 화장실 데이터 초기화
+async function resetToiletData() {
+  if (!confirm('모든 화장실 데이터를 삭제하시겠습니까?')) {
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/toilets', { method: 'DELETE' });
+    const data = await response.json();
+
+    if (data.success) {
+      state.toilets = [];
+      document.getElementById('toiletInfo').classList.add('hidden');
+      alert('화장실 데이터가 초기화되었습니다.');
+    }
+  } catch (error) {
+    alert('초기화 중 오류가 발생했습니다.');
     console.error(error);
   }
 }

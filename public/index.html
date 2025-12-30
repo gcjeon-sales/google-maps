@@ -48,11 +48,18 @@
         <section class="panel-section">
           <h3>🚽 공중화장실 데이터</h3>
           <div class="upload-area">
-            <label>CSV/Excel 파일 업로드</label>
+            <label>CSV/Excel 파일 업로드 (지역별 누적)</label>
             <input type="file" id="toiletFileInput" accept=".csv,.xlsx,.xls">
-            <p class="help-text">공공데이터포털에서 다운로드한 파일</p>
+            <p class="help-text">
+              <a href="https://www.localdata.go.kr/lif/lifeCtacDataView.do" target="_blank">공공데이터포털</a>에서 지역별 다운로드
+            </p>
           </div>
-          <div id="toiletCount" class="info-badge hidden">0개 화장실 데이터 로드됨</div>
+          <div id="toiletInfo" class="toilet-info hidden">
+            <div id="toiletCount" class="info-badge">0개 화장실 데이터</div>
+            <div id="toiletRegions" class="info-regions"></div>
+            <div id="toiletUpdate" class="info-update"></div>
+            <button id="resetToiletBtn" class="btn-reset" title="초기화">🗑️</button>
+          </div>
         </section>
 
         <!-- 장소 목록 -->

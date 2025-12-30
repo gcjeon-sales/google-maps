@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const xml2js = require('xml2js');
@@ -9,6 +10,15 @@ const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 화장실 데이터 저장 경로
+const TOILET_DATA_DIR = path.join(__dirname, 'user_data');
+const TOILET_DATA_FILE = path.join(TOILET_DATA_DIR, 'toilets.json');
+
+// user_data 디렉토리 생성
+if (!fs.existsSync(TOILET_DATA_DIR)) {
+  fs.mkdirSync(TOILET_DATA_DIR, { recursive: true });
+}
 
 // Middleware
 app.use(cors());
@@ -452,8 +462,37 @@ app.post('/api/geocode-batch', async (req, res) => {
 })
 
 // ============================================
-// 공중화장실 데이터 파싱 (CSV/Excel)
+// 공중화장실 데이터 (영구 저장)
 // ============================================
+
+// 저장된 화장실 데이터 로드
+app.get('/api/toilets', (req, res) => {
+  try {
+    if (fs.existsSync(TOILET_DATA_FILE)) {
+      const data = JSON.parse(fs.readFileSync(TOILET_DATA_FILE, 'utf-8'));
+      res.json({
+        success: true,
+        toilets: data.toilets || [],
+        count: data.toilets?.length || 0,
+        lastUpdate: data.lastUpdate || null,
+        regions: data.regions || []
+      });
+    } else {
+      res.json({
+        success: true,
+        toilets: [],
+        count: 0,
+        lastUpdate: null,
+        regions: []
+      });
+    }
+  } catch (error) {
+    console.error('화장실 데이터 로드 에러:', error);
+    res.status(500).json({ error: '데이터 로드 중 오류가 발생했습니다.' });
+  }
+});
+
+// 화장실 데이터 업로드 (누적 병합)
 app.post('/api/parse-toilet', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -465,16 +504,20 @@ app.post('/api/parse-toilet', upload.single('file'), async (req, res) => {
     const sheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(sheet);
 
+    // 파일명에서 지역 추출 시도
+    const filename = req.file.originalname;
+    const regionMatch = filename.match(/([가-힣]+(?:도|시|군|구))/);
+    const region = regionMatch ? regionMatch[1] : '기타';
+
     // 공중화장실 표준 데이터 필드 매핑
-    const toilets = data.map((row, index) => {
-      // 다양한 필드명 처리 (공공데이터 표준에 따름)
+    const newToilets = data.map((row, index) => {
       const lat = parseFloat(row['위도'] || row['WGS84위도'] || row['latitude'] || 0);
       const lng = parseFloat(row['경도'] || row['WGS84경도'] || row['longitude'] || 0);
 
       if (!lat || !lng) return null;
 
       return {
-        id: index,
+        id: `${region}_${Date.now()}_${index}`,
         name: row['화장실명'] || row['시설명'] || row['name'] || '공중화장실',
         address: row['소재지도로명주소'] || row['소재지지번주소'] || row['도로명주소'] || row['주소'] || '',
         type: row['구분'] || row['화장실구분'] || row['유형'] || '',
@@ -485,15 +528,58 @@ app.post('/api/parse-toilet', upload.single('file'), async (req, res) => {
         openTime: row['개방시간'] || row['운영시간'] || '24시간',
         manager: row['관리기관명'] || row['관리기관'] || '',
         phone: row['전화번호'] || row['연락처'] || '',
+        region: region,
         lat,
         lng
       };
     }).filter(t => t !== null);
 
-    res.json({ success: true, toilets, count: toilets.length });
+    // 기존 데이터 로드
+    let existingData = { toilets: [], regions: [], lastUpdate: null };
+    if (fs.existsSync(TOILET_DATA_FILE)) {
+      existingData = JSON.parse(fs.readFileSync(TOILET_DATA_FILE, 'utf-8'));
+    }
+
+    // 동일 지역 데이터는 교체, 새 지역 데이터는 추가
+    const existingToilets = existingData.toilets.filter(t => t.region !== region);
+    const mergedToilets = [...existingToilets, ...newToilets];
+
+    // 지역 목록 업데이트
+    const regions = [...new Set(mergedToilets.map(t => t.region))].sort();
+
+    // 저장
+    const saveData = {
+      toilets: mergedToilets,
+      regions: regions,
+      lastUpdate: new Date().toISOString()
+    };
+    fs.writeFileSync(TOILET_DATA_FILE, JSON.stringify(saveData, null, 2));
+
+    res.json({
+      success: true,
+      toilets: mergedToilets,
+      count: mergedToilets.length,
+      newCount: newToilets.length,
+      region: region,
+      regions: regions,
+      lastUpdate: saveData.lastUpdate
+    });
   } catch (error) {
     console.error('화장실 데이터 파싱 에러:', error);
     res.status(500).json({ error: '파일 파싱 중 오류가 발생했습니다.' });
+  }
+});
+
+// 화장실 데이터 초기화
+app.delete('/api/toilets', (req, res) => {
+  try {
+    if (fs.existsSync(TOILET_DATA_FILE)) {
+      fs.unlinkSync(TOILET_DATA_FILE);
+    }
+    res.json({ success: true, message: '화장실 데이터가 초기화되었습니다.' });
+  } catch (error) {
+    console.error('화장실 데이터 삭제 에러:', error);
+    res.status(500).json({ error: '데이터 삭제 중 오류가 발생했습니다.' });
   }
 });
 

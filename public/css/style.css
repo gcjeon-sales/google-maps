@@ -152,6 +152,49 @@ body {
   margin-top: 0.8rem;
 }
 
+/* 화장실 데이터 정보 */
+.toilet-info {
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  position: relative;
+}
+
+.toilet-info .info-badge {
+  margin-top: 0;
+  display: inline-block;
+}
+
+.info-regions {
+  font-size: 0.75rem;
+  color: #666;
+  margin-top: 0.5rem;
+  line-height: 1.4;
+}
+
+.info-update {
+  font-size: 0.7rem;
+  color: #999;
+  margin-top: 0.3rem;
+}
+
+.btn-reset {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.btn-reset:hover {
+  opacity: 1;
+}
+
 .hidden {
   display: none !important;
 }
