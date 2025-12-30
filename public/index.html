@@ -149,6 +149,11 @@
           <input type="password" id="naverClientSecret" placeholder="클라이언트 시크릿">
           <p class="help-text">네이버 개발자센터에서 발급</p>
         </div>
+        <div class="form-group">
+          <label>Kakao REST API Key</label>
+          <input type="text" id="kakaoApiKey" placeholder="REST API 키">
+          <p class="help-text">주소→좌표 변환용 (Kakao Developers에서 발급)</p>
+        </div>
       </div>
       <div class="modal-footer">
         <button id="saveSettingsBtn" class="btn-primary">저장</button>
@@ -181,6 +186,14 @@
             <li>로그인 후 "Application" > "애플리케이션 등록"</li>
             <li>사용 API에서 "검색" 선택</li>
             <li>Client ID와 Client Secret 복사</li>
+          </ol>
+        </div>
+        <div class="guide-section">
+          <h3>3. Kakao REST API Key (주소→좌표 변환)</h3>
+          <ol>
+            <li><a href="https://developers.kakao.com" target="_blank">Kakao Developers</a> 접속</li>
+            <li>로그인 후 "내 애플리케이션" > "애플리케이션 추가"</li>
+            <li>앱 생성 후 "앱 키" 메뉴에서 "REST API 키" 복사</li>
           </ol>
         </div>
       </div>

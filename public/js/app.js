@@ -13,7 +13,8 @@ const state = {
 const config = {
   googleApiKey: localStorage.getItem('googleApiKey') || '',
   naverClientId: localStorage.getItem('naverClientId') || '',
-  naverClientSecret: localStorage.getItem('naverClientSecret') || ''
+  naverClientSecret: localStorage.getItem('naverClientSecret') || '',
+  kakaoApiKey: localStorage.getItem('kakaoApiKey') || ''
 };
 
 // DOM 로드 완료 시 초기화
@@ -208,11 +209,31 @@ async function handleKmlFileUpload(e) {
 
     const data = await response.json();
     if (data.success) {
-      state.places = data.places;
+      // Geocoding 필요한 장소 확인
+      const placesNeedGeocode = data.places.filter(p => p.needsGeocode && p.address);
+
+      if (placesNeedGeocode.length > 0) {
+        // Geocoding 진행
+        const geocodedPlaces = await geocodePlaces(data.places);
+        state.places = geocodedPlaces;
+      } else {
+        state.places = data.places;
+      }
+
+      // 좌표가 있는 장소만 필터링
+      const validPlaces = state.places.filter(p => p.coordinates && p.coordinates.lat && p.coordinates.lng);
+      state.places = validPlaces;
+
       renderPlacesList();
       addPlaceMarkers();
-      document.getElementById('placesCount').textContent = `${data.places.length}개 장소 로드됨`;
+      document.getElementById('placesCount').textContent = `${validPlaces.length}개 장소 로드됨`;
       document.getElementById('placesCount').classList.remove('hidden');
+
+      // Geocoding 실패한 장소가 있으면 알림
+      const failedCount = data.places.length - validPlaces.length;
+      if (failedCount > 0) {
+        alert(`${data.places.length}개 중 ${validPlaces.length}개 장소를 로드했습니다.\n(${failedCount}개는 좌표를 찾을 수 없습니다)`);
+      }
     } else {
       alert(data.error);
     }
@@ -239,11 +260,31 @@ async function handleKmlUrlLoad() {
 
     const data = await response.json();
     if (data.success) {
-      state.places = data.places;
+      // Geocoding 필요한 장소 확인
+      const placesNeedGeocode = data.places.filter(p => p.needsGeocode && p.address);
+
+      if (placesNeedGeocode.length > 0) {
+        // Geocoding 진행
+        const geocodedPlaces = await geocodePlaces(data.places);
+        state.places = geocodedPlaces;
+      } else {
+        state.places = data.places;
+      }
+
+      // 좌표가 있는 장소만 필터링
+      const validPlaces = state.places.filter(p => p.coordinates && p.coordinates.lat && p.coordinates.lng);
+      state.places = validPlaces;
+
       renderPlacesList();
       addPlaceMarkers();
-      document.getElementById('placesCount').textContent = `${data.places.length}개 장소 로드됨`;
+      document.getElementById('placesCount').textContent = `${validPlaces.length}개 장소 로드됨`;
       document.getElementById('placesCount').classList.remove('hidden');
+
+      // Geocoding 실패한 장소가 있으면 알림
+      const failedCount = data.places.length - validPlaces.length;
+      if (failedCount > 0) {
+        alert(`${data.places.length}개 중 ${validPlaces.length}개 장소를 로드했습니다.\n(${failedCount}개는 좌표를 찾을 수 없습니다)`);
+      }
     } else {
       alert(data.error);
     }
@@ -513,6 +554,65 @@ function displaySearchResults(items, analysis) {
 }
 
 // ============================================
+// Geocoding (주소 → 좌표 변환)
+// ============================================
+async function geocodePlaces(places) {
+  if (!config.kakaoApiKey) {
+    alert('Kakao API 키가 필요합니다. 설정에서 입력해주세요.');
+    showSettingsModal();
+    return places;
+  }
+
+  const placesNeedGeocode = places.filter(p => p.needsGeocode && p.address);
+
+  if (placesNeedGeocode.length === 0) {
+    return places;
+  }
+
+  // 로딩 메시지 표시
+  const container = document.getElementById('placesList');
+  container.innerHTML = `<div class="loading"></div><p style="text-align:center;color:#666;">주소 → 좌표 변환 중... (${placesNeedGeocode.length}개)</p>`;
+
+  try {
+    const response = await fetch('/api/geocode-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        places: placesNeedGeocode,
+        kakaoApiKey: config.kakaoApiKey
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      // 결과 병합
+      const geocodedMap = new Map(data.results.map(r => [r.name, r]));
+
+      return places.map(place => {
+        if (place.needsGeocode && geocodedMap.has(place.name)) {
+          const geocoded = geocodedMap.get(place.name);
+          if (geocoded.coordinates) {
+            return {
+              ...place,
+              coordinates: geocoded.coordinates,
+              geocodedAddress: geocoded.geocodedAddress
+            };
+          }
+        }
+        return place;
+      });
+    } else {
+      console.error('Geocoding failed:', data.error);
+      return places;
+    }
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    return places;
+  }
+}
+
+// ============================================
 // 유틸리티 함수
 // ============================================
 function calculateDistance(lat1, lng1, lat2, lng2) {
@@ -604,6 +704,7 @@ function showSettingsModal() {
   document.getElementById('googleApiKey').value = config.googleApiKey;
   document.getElementById('naverClientId').value = config.naverClientId;
   document.getElementById('naverClientSecret').value = config.naverClientSecret;
+  document.getElementById('kakaoApiKey').value = config.kakaoApiKey;
 }
 
 function showApiGuideModal() {
@@ -620,10 +721,12 @@ function saveSettings() {
   config.googleApiKey = document.getElementById('googleApiKey').value.trim();
   config.naverClientId = document.getElementById('naverClientId').value.trim();
   config.naverClientSecret = document.getElementById('naverClientSecret').value.trim();
+  config.kakaoApiKey = document.getElementById('kakaoApiKey').value.trim();
 
   localStorage.setItem('googleApiKey', config.googleApiKey);
   localStorage.setItem('naverClientId', config.naverClientId);
   localStorage.setItem('naverClientSecret', config.naverClientSecret);
+  localStorage.setItem('kakaoApiKey', config.kakaoApiKey);
 
   closeAllModals();
 

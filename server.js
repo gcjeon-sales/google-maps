@@ -103,7 +103,9 @@ function extractPlacesFromKML(kml) {
         const place = {
           name: pm.name ? pm.name[0] : '이름 없음',
           description: pm.description ? pm.description[0] : '',
-          coordinates: null
+          coordinates: null,
+          address: null,
+          needsGeocode: false
         };
 
         // Point 좌표
@@ -115,7 +117,24 @@ function extractPlacesFromKML(kml) {
           };
         }
 
-        if (place.coordinates) {
+        // 좌표가 없으면 description에서 주소 추출
+        if (!place.coordinates && place.description) {
+          const addressMatch = place.description.match(/(?:주소|address|위치)?\s*[:\s]*([가-힣]+(?:도|시|군|구)[가-힣0-9\s\-]+)/i);
+          if (addressMatch) {
+            place.address = addressMatch[1].trim();
+            place.needsGeocode = true;
+          } else {
+            // description 자체가 주소일 수 있음
+            const koreanAddressPattern = /^[가-힣]+(?:도|시|군|구|읍|면|동|리|로|길)[가-힣0-9\s\-]+/;
+            if (koreanAddressPattern.test(place.description.trim())) {
+              place.address = place.description.trim().split('\n')[0];
+              place.needsGeocode = true;
+            }
+          }
+        }
+
+        // 좌표가 있거나 주소가 있으면 추가
+        if (place.coordinates || place.address) {
           places.push(place);
         }
       });
@@ -138,6 +157,156 @@ function extractPlacesFromKML(kml) {
 
   return places;
 }
+
+// ============================================
+// Geocoding API (주소 → 좌표 변환)
+// ============================================
+app.post('/api/geocode', async (req, res) => {
+  try {
+    const { address, kakaoApiKey } = req.body;
+
+    if (!address || !kakaoApiKey) {
+      return res.status(400).json({ error: 'address와 kakaoApiKey가 필요합니다.' });
+    }
+
+    const encodedAddress = encodeURIComponent(address);
+    const apiUrl = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodedAddress}`;
+
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `KakaoAK ${kakaoApiKey}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Kakao API 오류: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.documents && data.documents.length > 0) {
+      const doc = data.documents[0];
+      res.json({
+        success: true,
+        coordinates: {
+          lat: parseFloat(doc.y),
+          lng: parseFloat(doc.x)
+        },
+        address: doc.address_name || address
+      });
+    } else {
+      // 주소 검색 실패 시 키워드 검색 시도
+      const keywordUrl = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodedAddress}`;
+      const keywordResponse = await fetch(keywordUrl, {
+        headers: {
+          'Authorization': `KakaoAK ${kakaoApiKey}`
+        }
+      });
+
+      const keywordData = await keywordResponse.json();
+
+      if (keywordData.documents && keywordData.documents.length > 0) {
+        const doc = keywordData.documents[0];
+        res.json({
+          success: true,
+          coordinates: {
+            lat: parseFloat(doc.y),
+            lng: parseFloat(doc.x)
+          },
+          address: doc.address_name || doc.road_address_name || address
+        });
+      } else {
+        res.json({ success: false, error: '주소를 찾을 수 없습니다.' });
+      }
+    }
+  } catch (error) {
+    console.error('Geocoding 에러:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 배치 Geocoding (여러 주소 한번에 변환)
+app.post('/api/geocode-batch', async (req, res) => {
+  try {
+    const { places, kakaoApiKey } = req.body;
+
+    if (!places || !kakaoApiKey) {
+      return res.status(400).json({ error: 'places와 kakaoApiKey가 필요합니다.' });
+    }
+
+    const results = [];
+    let successCount = 0;
+    let failCount = 0;
+
+    // 순차적으로 처리 (API 호출 제한 고려)
+    for (const place of places) {
+      if (place.coordinates) {
+        results.push(place);
+        successCount++;
+        continue;
+      }
+
+      if (!place.address && !place.name) {
+        results.push(place);
+        failCount++;
+        continue;
+      }
+
+      const searchQuery = place.address || place.name;
+      const encodedQuery = encodeURIComponent(searchQuery);
+
+      try {
+        // 먼저 주소 검색
+        let apiUrl = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodedQuery}`;
+        let response = await fetch(apiUrl, {
+          headers: { 'Authorization': `KakaoAK ${kakaoApiKey}` }
+        });
+        let data = await response.json();
+
+        if (!data.documents || data.documents.length === 0) {
+          // 키워드 검색으로 시도
+          apiUrl = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodedQuery}`;
+          response = await fetch(apiUrl, {
+            headers: { 'Authorization': `KakaoAK ${kakaoApiKey}` }
+          });
+          data = await response.json();
+        }
+
+        if (data.documents && data.documents.length > 0) {
+          const doc = data.documents[0];
+          place.coordinates = {
+            lat: parseFloat(doc.y),
+            lng: parseFloat(doc.x)
+          };
+          place.needsGeocode = false;
+          successCount++;
+        } else {
+          failCount++;
+        }
+
+        results.push(place);
+
+        // API 호출 간격 (초당 10회 제한 고려)
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (err) {
+        console.error(`Geocoding 실패 (${searchQuery}):`, err.message);
+        results.push(place);
+        failCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      places: results.filter(p => p.coordinates),
+      totalProcessed: places.length,
+      successCount,
+      failCount
+    });
+  } catch (error) {
+    console.error('배치 Geocoding 에러:', error);
+    res.status(500).json({ error: error.message });
+  }
+})
 
 // ============================================
 // 공중화장실 데이터 파싱 (CSV/Excel)
