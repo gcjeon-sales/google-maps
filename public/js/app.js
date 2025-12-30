@@ -563,7 +563,8 @@ async function geocodePlaces(places) {
     return places;
   }
 
-  const placesNeedGeocode = places.filter(p => p.needsGeocode && p.address);
+  // 좌표가 없고 이름이나 주소가 있는 장소를 필터링
+  const placesNeedGeocode = places.filter(p => p.needsGeocode && (p.address || p.name));
 
   if (placesNeedGeocode.length === 0) {
     return places;
@@ -586,8 +587,8 @@ async function geocodePlaces(places) {
     const data = await response.json();
 
     if (data.success) {
-      // 결과 병합
-      const geocodedMap = new Map(data.results.map(r => [r.name, r]));
+      // 결과 병합 (서버는 data.places로 반환)
+      const geocodedMap = new Map(data.places.map(r => [r.name, r]));
 
       return places.map(place => {
         if (place.needsGeocode && geocodedMap.has(place.name)) {
