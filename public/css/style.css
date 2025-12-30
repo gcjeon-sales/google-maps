@@ -1,0 +1,653 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Noto Sans KR', sans-serif;
+  background: #f5f5f5;
+  color: #333;
+  min-height: 100vh;
+}
+
+/* 헤더 */
+.header {
+  background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+  color: white;
+  padding: 1rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  position: relative;
+}
+
+.header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.header p {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.btn-icon {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2rem;
+  position: absolute;
+  right: 2rem;
+  transition: background 0.3s;
+}
+
+.btn-icon:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+/* 메인 레이아웃 */
+.main-content {
+  display: grid;
+  grid-template-columns: 320px 1fr 380px;
+  height: calc(100vh - 80px);
+}
+
+/* 패널 공통 */
+.left-panel, .right-panel {
+  background: white;
+  overflow-y: auto;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.left-panel {
+  border-right: 1px solid #e0e0e0;
+}
+
+.right-panel {
+  border-left: 1px solid #e0e0e0;
+}
+
+.panel-section {
+  padding: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.panel-section h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0.8rem;
+  color: #2c3e50;
+}
+
+/* 업로드 영역 */
+.upload-area {
+  background: #f8f9fa;
+  border: 2px dashed #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.upload-method {
+  margin-bottom: 0.8rem;
+}
+
+.upload-method label {
+  display: block;
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.4rem;
+}
+
+.upload-method input[type="file"] {
+  width: 100%;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.upload-method input[type="text"] {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.divider {
+  text-align: center;
+  color: #999;
+  font-size: 0.8rem;
+  margin: 0.8rem 0;
+  position: relative;
+}
+
+.divider::before, .divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 40%;
+  height: 1px;
+  background: #ddd;
+}
+
+.divider::before { left: 0; }
+.divider::after { right: 0; }
+
+.help-text {
+  font-size: 0.75rem;
+  color: #999;
+  margin-top: 0.3rem;
+}
+
+.info-badge {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  text-align: center;
+  margin-top: 0.8rem;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* 버튼 */
+.btn-primary {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.3s;
+  width: 100%;
+}
+
+.btn-primary:hover {
+  background: #2980b9;
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+/* 검색 입력 */
+.search-input {
+  width: 100%;
+  padding: 0.7rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  margin-bottom: 0.8rem;
+}
+
+/* 장소 목록 */
+.places-list-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+
+.places-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: calc(100vh - 500px);
+}
+
+.place-item {
+  padding: 0.8rem;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.place-item:hover {
+  background: #f5f5f5;
+}
+
+.place-item.active {
+  background: #e3f2fd;
+  border-left: 3px solid #3498db;
+}
+
+.place-item h4 {
+  font-size: 0.9rem;
+  margin-bottom: 0.3rem;
+}
+
+.place-item p {
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.empty-message {
+  color: #999;
+  text-align: center;
+  padding: 2rem;
+  font-size: 0.9rem;
+}
+
+/* 지도 */
+.map-container {
+  position: relative;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  background: #e0e0e0;
+}
+
+/* 상세 패널 */
+.detail-header {
+  padding: 1.2rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.detail-header h2 {
+  font-size: 1.1rem;
+  margin-bottom: 0.3rem;
+}
+
+.detail-header p {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+/* 탭 */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid #eee;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 0.8rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #666;
+  border-bottom: 2px solid transparent;
+  transition: all 0.3s;
+}
+
+.tab-btn:hover {
+  background: #f5f5f5;
+}
+
+.tab-btn.active {
+  color: #3498db;
+  border-bottom-color: #3498db;
+}
+
+.tab-content {
+  display: none;
+  padding: 1rem;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+/* 화장실 반경 컨트롤 */
+.radius-control {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.radius-control label {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.radius-control select {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+/* 결과 목록 */
+.results-list {
+  max-height: calc(100vh - 400px);
+  overflow-y: auto;
+}
+
+.result-item {
+  padding: 0.8rem;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 0.6rem;
+  background: #fafafa;
+}
+
+.result-item h4 {
+  font-size: 0.9rem;
+  margin-bottom: 0.4rem;
+  color: #2c3e50;
+}
+
+.result-item p {
+  font-size: 0.8rem;
+  color: #666;
+  line-height: 1.4;
+}
+
+.result-item .distance {
+  display: inline-block;
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  margin-top: 0.4rem;
+}
+
+.result-item .meta {
+  font-size: 0.75rem;
+  color: #999;
+  margin-top: 0.4rem;
+}
+
+.result-item a {
+  color: #3498db;
+  text-decoration: none;
+}
+
+.result-item a:hover {
+  text-decoration: underline;
+}
+
+/* 분석 섹션 */
+.analysis-section {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.analysis-section h4 {
+  font-size: 0.9rem;
+  margin-bottom: 0.6rem;
+}
+
+.analysis-summary {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #555;
+  margin-bottom: 0.8rem;
+}
+
+.analysis-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.sentiment-badge {
+  padding: 0.3rem 0.8rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.sentiment-badge.positive {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.sentiment-badge.negative {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.sentiment-badge.neutral {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.keyword-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.keyword-tag {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+}
+
+.keyword-tag.facility {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.keyword-tag.environment {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+/* 검색 옵션 */
+.search-options {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.search-options input {
+  flex: 1;
+  padding: 0.6rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.search-options .btn-primary {
+  width: auto;
+}
+
+/* 모달 */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 450px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+}
+
+.modal-large {
+  max-width: 600px;
+}
+
+.modal-header {
+  padding: 1.2rem;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  font-size: 1.1rem;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #999;
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #eee;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.form-group {
+  margin-bottom: 1.2rem;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: 0.4rem;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 0.7rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+/* 가이드 섹션 */
+.guide-section {
+  margin-bottom: 1.5rem;
+}
+
+.guide-section h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0.6rem;
+  color: #2c3e50;
+}
+
+.guide-section ol {
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+
+.guide-section a {
+  color: #3498db;
+}
+
+/* 장소 정보 */
+.place-info {
+  font-size: 0.9rem;
+}
+
+.place-info .info-row {
+  display: flex;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.place-info .info-row label {
+  width: 80px;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.place-info .info-row span {
+  flex: 1;
+}
+
+/* 화장실 상세 정보 */
+.toilet-detail {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #eee;
+}
+
+.toilet-detail .detail-item {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.toilet-detail .detail-item span {
+  font-weight: 500;
+  color: #333;
+}
+
+/* 로딩 */
+.loading {
+  text-align: center;
+  padding: 2rem;
+}
+
+.loading::after {
+  content: '';
+  display: inline-block;
+  width: 30px;
+  height: 30px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 반응형 */
+@media (max-width: 1200px) {
+  .main-content {
+    grid-template-columns: 280px 1fr 320px;
+  }
+}
+
+@media (max-width: 992px) {
+  .main-content {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 400px auto;
+  }
+
+  .left-panel, .right-panel {
+    border: none;
+  }
+
+  .places-list {
+    max-height: 200px;
+  }
+
+  .results-list {
+    max-height: 300px;
+  }
+}

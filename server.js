@@ -1,0 +1,352 @@
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const multer = require('multer');
+const XLSX = require('xlsx');
+const xml2js = require('xml2js');
+const JSZip = require('jszip');
+const fetch = require('node-fetch');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.static('public'));
+
+// File upload configuration
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+});
+
+// ============================================
+// KML/KMZ 파일 파싱
+// ============================================
+app.post('/api/parse-kml', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: '파일이 업로드되지 않았습니다.' });
+    }
+
+    let kmlContent;
+    const filename = req.file.originalname.toLowerCase();
+
+    if (filename.endsWith('.kmz')) {
+      // KMZ 파일 처리 (ZIP 압축)
+      const zip = await JSZip.loadAsync(req.file.buffer);
+      const kmlFile = Object.keys(zip.files).find(name => name.endsWith('.kml'));
+      if (!kmlFile) {
+        return res.status(400).json({ error: 'KMZ 파일 내에 KML 파일이 없습니다.' });
+      }
+      kmlContent = await zip.files[kmlFile].async('string');
+    } else {
+      kmlContent = req.file.buffer.toString('utf-8');
+    }
+
+    const parser = new xml2js.Parser();
+    const result = await parser.parseStringPromise(kmlContent);
+    const places = extractPlacesFromKML(result);
+
+    res.json({ success: true, places });
+  } catch (error) {
+    console.error('KML 파싱 에러:', error);
+    res.status(500).json({ error: 'KML 파일 파싱 중 오류가 발생했습니다.' });
+  }
+});
+
+// KML URL에서 데이터 가져오기
+app.post('/api/parse-kml-url', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: 'URL이 필요합니다.' });
+    }
+
+    // Google My Maps 공유 URL을 KML 다운로드 URL로 변환
+    let kmlUrl = url;
+    if (url.includes('google.com/maps/d/')) {
+      const midMatch = url.match(/mid=([^&]+)/);
+      if (midMatch) {
+        kmlUrl = `https://www.google.com/maps/d/kml?mid=${midMatch[1]}&forcekml=1`;
+      }
+    }
+
+    const response = await fetch(kmlUrl);
+    if (!response.ok) {
+      throw new Error('KML 파일을 가져올 수 없습니다.');
+    }
+
+    const kmlContent = await response.text();
+    const parser = new xml2js.Parser();
+    const result = await parser.parseStringPromise(kmlContent);
+    const places = extractPlacesFromKML(result);
+
+    res.json({ success: true, places });
+  } catch (error) {
+    console.error('KML URL 파싱 에러:', error);
+    res.status(500).json({ error: 'URL에서 KML 데이터를 가져오는 중 오류가 발생했습니다. 공유 설정을 확인해주세요.' });
+  }
+});
+
+function extractPlacesFromKML(kml) {
+  const places = [];
+
+  function traverse(obj) {
+    if (!obj) return;
+
+    if (obj.Placemark) {
+      const placemarks = Array.isArray(obj.Placemark) ? obj.Placemark : [obj.Placemark];
+      placemarks.forEach(pm => {
+        const place = {
+          name: pm.name ? pm.name[0] : '이름 없음',
+          description: pm.description ? pm.description[0] : '',
+          coordinates: null
+        };
+
+        // Point 좌표
+        if (pm.Point && pm.Point[0] && pm.Point[0].coordinates) {
+          const coords = pm.Point[0].coordinates[0].trim().split(',');
+          place.coordinates = {
+            lng: parseFloat(coords[0]),
+            lat: parseFloat(coords[1])
+          };
+        }
+
+        if (place.coordinates) {
+          places.push(place);
+        }
+      });
+    }
+
+    // 하위 폴더 탐색
+    if (obj.Folder) {
+      const folders = Array.isArray(obj.Folder) ? obj.Folder : [obj.Folder];
+      folders.forEach(traverse);
+    }
+    if (obj.Document) {
+      const docs = Array.isArray(obj.Document) ? obj.Document : [obj.Document];
+      docs.forEach(traverse);
+    }
+  }
+
+  if (kml.kml) {
+    traverse(kml.kml);
+  }
+
+  return places;
+}
+
+// ============================================
+// 공중화장실 데이터 파싱 (CSV/Excel)
+// ============================================
+app.post('/api/parse-toilet', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: '파일이 업로드되지 않았습니다.' });
+    }
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(sheet);
+
+    // 공중화장실 표준 데이터 필드 매핑
+    const toilets = data.map((row, index) => {
+      // 다양한 필드명 처리 (공공데이터 표준에 따름)
+      const lat = parseFloat(row['위도'] || row['WGS84위도'] || row['latitude'] || 0);
+      const lng = parseFloat(row['경도'] || row['WGS84경도'] || row['longitude'] || 0);
+
+      if (!lat || !lng) return null;
+
+      return {
+        id: index,
+        name: row['화장실명'] || row['시설명'] || row['name'] || '공중화장실',
+        address: row['소재지도로명주소'] || row['소재지지번주소'] || row['도로명주소'] || row['주소'] || '',
+        type: row['구분'] || row['화장실구분'] || row['유형'] || '',
+        maleToilet: row['남성용-대변기수'] || row['남성용대변기수'] || 0,
+        maleUrinal: row['남성용-소변기수'] || row['남성용소변기수'] || 0,
+        femaleToilet: row['여성용-대변기수'] || row['여성용대변기수'] || 0,
+        disabledToilet: row['장애인용-남성대변기수'] || row['장애인용남성대변기수'] || 0,
+        openTime: row['개방시간'] || row['운영시간'] || '24시간',
+        manager: row['관리기관명'] || row['관리기관'] || '',
+        phone: row['전화번호'] || row['연락처'] || '',
+        lat,
+        lng
+      };
+    }).filter(t => t !== null);
+
+    res.json({ success: true, toilets, count: toilets.length });
+  } catch (error) {
+    console.error('화장실 데이터 파싱 에러:', error);
+    res.status(500).json({ error: '파일 파싱 중 오류가 발생했습니다.' });
+  }
+});
+
+// ============================================
+// 네이버 검색 API
+// ============================================
+app.post('/api/naver-search', async (req, res) => {
+  try {
+    const { query, clientId, clientSecret, type = 'blog' } = req.body;
+
+    if (!query || !clientId || !clientSecret) {
+      return res.status(400).json({ error: 'query, clientId, clientSecret가 필요합니다.' });
+    }
+
+    const searchQuery = encodeURIComponent(query);
+    const apiUrl = `https://openapi.naver.com/v1/search/${type}.json?query=${searchQuery}&display=20&sort=sim`;
+
+    const response = await fetch(apiUrl, {
+      headers: {
+        'X-Naver-Client-Id': clientId,
+        'X-Naver-Client-Secret': clientSecret
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`네이버 API 오류: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    // 검색 결과 요약 분석
+    const analysis = analyzeSearchResults(data.items, query);
+
+    res.json({
+      success: true,
+      items: data.items,
+      total: data.total,
+      analysis
+    });
+  } catch (error) {
+    console.error('네이버 검색 에러:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 검색 결과 요약 분석 함수
+function analyzeSearchResults(items, query) {
+  if (!items || items.length === 0) {
+    return {
+      summary: '검색 결과가 없습니다.',
+      keywords: [],
+      sentiment: 'neutral',
+      highlights: []
+    };
+  }
+
+  // HTML 태그 제거 함수
+  const stripHtml = (str) => str.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ');
+
+  // 모든 텍스트 합치기
+  const allText = items.map(item =>
+    stripHtml(item.title + ' ' + (item.description || ''))
+  ).join(' ');
+
+  // 차박 관련 키워드 추출
+  const carbakKeywords = {
+    positive: ['좋아요', '추천', '최고', '깨끗', '넓어요', '편해요', '조용', '쾌적', '안전', '좋았', '만족', '굿', '대박'],
+    negative: ['별로', '비추', '더러워', '좁아요', '불편', '시끄러워', '위험', '실망', '최악', '안좋'],
+    facilities: ['화장실', '편의점', '마트', '주차', '전기', '수도', '샤워', '취사', '바베큐', '테이블', '벤치'],
+    environment: ['뷰', '전망', '야경', '일출', '일몰', '바다', '산', '강', '호수', '숲']
+  };
+
+  // 키워드 빈도 분석
+  const foundKeywords = {};
+  Object.entries(carbakKeywords).forEach(([category, words]) => {
+    words.forEach(word => {
+      const regex = new RegExp(word, 'gi');
+      const matches = allText.match(regex);
+      if (matches) {
+        foundKeywords[word] = {
+          count: matches.length,
+          category
+        };
+      }
+    });
+  });
+
+  // 감성 분석 (긍정/부정 비율)
+  let positiveCount = 0;
+  let negativeCount = 0;
+  Object.entries(foundKeywords).forEach(([word, info]) => {
+    if (info.category === 'positive') positiveCount += info.count;
+    if (info.category === 'negative') negativeCount += info.count;
+  });
+
+  let sentiment = 'neutral';
+  let sentimentScore = 0;
+  if (positiveCount + negativeCount > 0) {
+    sentimentScore = (positiveCount - negativeCount) / (positiveCount + negativeCount);
+    if (sentimentScore > 0.2) sentiment = 'positive';
+    else if (sentimentScore < -0.2) sentiment = 'negative';
+  }
+
+  // 주요 하이라이트 추출 (제목에서)
+  const highlights = items.slice(0, 5).map(item => ({
+    title: stripHtml(item.title),
+    link: item.link,
+    date: item.postdate || item.datetime || ''
+  }));
+
+  // 시설 관련 키워드 정리
+  const facilityMentions = Object.entries(foundKeywords)
+    .filter(([_, info]) => info.category === 'facilities')
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 5)
+    .map(([word, info]) => ({ word, count: info.count }));
+
+  // 환경 관련 키워드 정리
+  const environmentMentions = Object.entries(foundKeywords)
+    .filter(([_, info]) => info.category === 'environment')
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 5)
+    .map(([word, info]) => ({ word, count: info.count }));
+
+  // 요약 생성
+  let summary = `"${query}" 관련 ${items.length}개의 글을 분석했습니다. `;
+  if (sentiment === 'positive') {
+    summary += '전반적으로 긍정적인 후기가 많습니다. ';
+  } else if (sentiment === 'negative') {
+    summary += '부정적인 의견이 다소 있으니 참고하세요. ';
+  }
+  if (facilityMentions.length > 0) {
+    summary += `자주 언급된 시설: ${facilityMentions.map(f => f.word).join(', ')}. `;
+  }
+  if (environmentMentions.length > 0) {
+    summary += `주변 환경: ${environmentMentions.map(e => e.word).join(', ')}.`;
+  }
+
+  return {
+    summary,
+    sentiment,
+    sentimentScore: Math.round(sentimentScore * 100),
+    totalResults: items.length,
+    keywords: {
+      facilities: facilityMentions,
+      environment: environmentMentions,
+      positive: Object.entries(foundKeywords)
+        .filter(([_, info]) => info.category === 'positive')
+        .map(([word, info]) => ({ word, count: info.count })),
+      negative: Object.entries(foundKeywords)
+        .filter(([_, info]) => info.category === 'negative')
+        .map(([word, info]) => ({ word, count: info.count }))
+    },
+    highlights
+  };
+}
+
+// ============================================
+// 정적 파일 서빙
+// ============================================
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
