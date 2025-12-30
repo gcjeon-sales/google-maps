@@ -159,6 +159,132 @@ function extractPlacesFromKML(kml) {
 }
 
 // ============================================
+// Google Takeout JSON 파싱
+// ============================================
+app.post('/api/parse-takeout', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: '파일이 업로드되지 않았습니다.' });
+    }
+
+    const content = req.file.buffer.toString('utf-8');
+    let data;
+
+    try {
+      data = JSON.parse(content);
+    } catch (e) {
+      return res.status(400).json({ error: 'JSON 파일 형식이 올바르지 않습니다.' });
+    }
+
+    const places = [];
+
+    // GeoJSON FeatureCollection 형식 (Google Takeout 표준)
+    if (data.type === 'FeatureCollection' && Array.isArray(data.features)) {
+      for (const feature of data.features) {
+        if (feature.type === 'Feature' && feature.geometry) {
+          const props = feature.properties || {};
+          const geom = feature.geometry;
+
+          let coordinates = null;
+          if (geom.type === 'Point' && Array.isArray(geom.coordinates)) {
+            coordinates = {
+              lng: geom.coordinates[0],
+              lat: geom.coordinates[1]
+            };
+          }
+
+          // 이름 추출 (여러 필드에서 시도)
+          const name = props.Title || props.name || props.Name ||
+                       props.title || props['Google Maps URL']?.split('/').pop() ||
+                       `장소 ${places.length + 1}`;
+
+          // 주소 추출
+          const address = props.Location?.Address || props.address ||
+                          props.Address || props.location || '';
+
+          places.push({
+            name: name,
+            description: address || props.Comment || props.description || '',
+            coordinates: coordinates,
+            address: address,
+            needsGeocode: !coordinates
+          });
+        }
+      }
+    }
+    // 배열 형식 (일부 Takeout 버전)
+    else if (Array.isArray(data)) {
+      for (const item of data) {
+        const name = item.title || item.name || item.Title || `장소 ${places.length + 1}`;
+        let coordinates = null;
+
+        if (item.geometry?.location) {
+          coordinates = {
+            lat: item.geometry.location.lat,
+            lng: item.geometry.location.lng
+          };
+        } else if (item.location) {
+          coordinates = {
+            lat: item.location.latitude || item.location.lat,
+            lng: item.location.longitude || item.location.lng
+          };
+        } else if (item.lat && item.lng) {
+          coordinates = { lat: item.lat, lng: item.lng };
+        }
+
+        places.push({
+          name: name,
+          description: item.address || item.description || '',
+          coordinates: coordinates,
+          address: item.address || '',
+          needsGeocode: !coordinates
+        });
+      }
+    }
+    // 단일 객체에 places 배열이 있는 경우
+    else if (data.places && Array.isArray(data.places)) {
+      for (const item of data.places) {
+        const name = item.title || item.name || `장소 ${places.length + 1}`;
+        let coordinates = null;
+
+        if (item.location) {
+          coordinates = {
+            lat: item.location.latitude || item.location.lat,
+            lng: item.location.longitude || item.location.lng
+          };
+        }
+
+        places.push({
+          name: name,
+          description: item.address || item.description || '',
+          coordinates: coordinates,
+          address: item.address || '',
+          needsGeocode: !coordinates
+        });
+      }
+    }
+
+    if (places.length === 0) {
+      return res.status(400).json({
+        error: '장소 데이터를 찾을 수 없습니다. Google Takeout에서 내보낸 "저장한 장소" JSON 파일인지 확인해주세요.'
+      });
+    }
+
+    res.json({
+      success: true,
+      places: places,
+      count: places.length,
+      withCoordinates: places.filter(p => p.coordinates).length,
+      needsGeocode: places.filter(p => p.needsGeocode).length
+    });
+
+  } catch (error) {
+    console.error('Takeout 파싱 에러:', error);
+    res.status(500).json({ error: '파일 처리 중 오류가 발생했습니다.' });
+  }
+});
+
+// ============================================
 // Geocoding API (주소 → 좌표 변환)
 // ============================================
 app.post('/api/geocode', async (req, res) => {

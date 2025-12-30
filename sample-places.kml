@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>차박 스팟 샘플</name>
+    <Folder>
+      <name>차박 명소</name>
+      <Placemark>
+        <name>양평 두물머리</name>
+        <description>북한강과 남한강이 만나는 곳. 일출 명소로 유명</description>
+        <Point>
+          <coordinates>127.3103,37.5312,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>춘천 의암호</name>
+        <description>호수 뷰가 아름다운 차박 명소</description>
+        <Point>
+          <coordinates>127.7286,37.8813,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>강릉 경포대</name>
+        <description>동해 바다와 경포호를 함께 볼 수 있는 곳</description>
+        <Point>
+          <coordinates>128.9089,37.7947,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>태안 만리포해수욕장</name>
+        <description>서해안 일몰 명소, 넓은 주차장</description>
+        <Point>
+          <coordinates>126.1397,36.7847,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>제주 함덕해수욕장</name>
+        <description>에메랄드빛 바다, 제주 차박 인기 스팟</description>
+        <Point>
+          <coordinates>126.6697,33.5433,0</coordinates>
+        </Point>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>

@@ -43,6 +43,9 @@ function setupEventListeners() {
   // KML 파일 업로드
   document.getElementById('kmlFileInput').addEventListener('change', handleKmlFileUpload);
 
+  // Google Takeout JSON 업로드
+  document.getElementById('takeoutFileInput').addEventListener('change', handleTakeoutFileUpload);
+
   // KML URL 불러오기
   document.getElementById('loadUrlBtn').addEventListener('click', handleKmlUrlLoad);
 
@@ -290,6 +293,59 @@ async function handleKmlUrlLoad() {
     }
   } catch (error) {
     alert('URL에서 데이터를 가져오는 중 오류가 발생했습니다.');
+    console.error(error);
+  }
+}
+
+// ============================================
+// Google Takeout JSON 처리
+// ============================================
+async function handleTakeoutFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    showLoading('placesList');
+    const response = await fetch('/api/parse-takeout', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+    if (data.success) {
+      // Geocoding 필요한 장소 확인
+      const placesNeedGeocode = data.places.filter(p => p.needsGeocode && (p.address || p.name));
+
+      if (placesNeedGeocode.length > 0) {
+        // Geocoding 진행
+        const geocodedPlaces = await geocodePlaces(data.places);
+        state.places = geocodedPlaces;
+      } else {
+        state.places = data.places;
+      }
+
+      // 좌표가 있는 장소만 필터링
+      const validPlaces = state.places.filter(p => p.coordinates && p.coordinates.lat && p.coordinates.lng);
+      state.places = validPlaces;
+
+      renderPlacesList();
+      addPlaceMarkers();
+      document.getElementById('placesCount').textContent = `${validPlaces.length}개 장소 로드됨`;
+      document.getElementById('placesCount').classList.remove('hidden');
+
+      // 결과 알림
+      const failedCount = data.places.length - validPlaces.length;
+      if (failedCount > 0) {
+        alert(`${data.places.length}개 중 ${validPlaces.length}개 장소를 로드했습니다.\n(${failedCount}개는 좌표를 찾을 수 없습니다)`);
+      }
+    } else {
+      alert(data.error);
+    }
+  } catch (error) {
+    alert('파일 처리 중 오류가 발생했습니다.');
     console.error(error);
   }
 }
