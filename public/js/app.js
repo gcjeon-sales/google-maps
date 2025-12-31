@@ -609,12 +609,18 @@ function renderPlacesList() {
     return;
   }
 
-  container.innerHTML = state.places.map((place, index) => `
-    <div class="place-item" data-index="${index}">
-      <h4>${index + 1}. ${escapeHtml(place.name)}</h4>
-      <p>${escapeHtml(place.description || '설명 없음').substring(0, 50)}</p>
-    </div>
-  `).join('');
+  container.innerHTML = state.places.map((place, index) => {
+    // 목록에서는 <br> 제거하고 첫 줄만 표시
+    const shortDesc = (place.description || '설명 없음')
+      .replace(/<br\s*\/?>/gi, ' ')
+      .substring(0, 50);
+    return `
+      <div class="place-item" data-index="${index}">
+        <h4>${index + 1}. ${escapeHtml(place.name)}</h4>
+        <p>${escapeHtml(shortDesc)}${shortDesc.length >= 50 ? '...' : ''}</p>
+      </div>
+    `;
+  }).join('');
 
   // 클릭 이벤트 추가
   container.querySelectorAll('.place-item').forEach(item => {
@@ -647,7 +653,7 @@ function selectPlace(place, index) {
 
   // 상세 패널 업데이트
   document.getElementById('selectedPlaceName').textContent = place.name;
-  document.getElementById('selectedPlaceDesc').textContent = place.description || '';
+  document.getElementById('selectedPlaceDesc').innerHTML = escapeHtmlKeepBr(place.description || '');
 
   // 지도 이동
   if (state.map) {
@@ -656,9 +662,9 @@ function selectPlace(place, index) {
 
     // 인포윈도우 표시
     const content = `
-      <div style="max-width: 200px;">
+      <div style="max-width: 250px;">
         <h4 style="margin: 0 0 8px;">${escapeHtml(place.name)}</h4>
-        <p style="font-size: 12px; margin: 0;">${escapeHtml(place.description || '')}</p>
+        <p style="font-size: 12px; margin: 0; line-height: 1.5;">${escapeHtmlKeepBr(place.description || '')}</p>
       </div>
     `;
     state.infoWindow.setContent(content);
@@ -907,6 +913,18 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// HTML 이스케이프하되 <br> 태그는 유지
+function escapeHtmlKeepBr(str) {
+  if (!str) return '';
+  // 먼저 <br>, <br/>, <br /> 태그를 임시 플레이스홀더로 변환
+  const placeholder = '___BR_PLACEHOLDER___';
+  const withPlaceholder = str.replace(/<br\s*\/?>/gi, placeholder);
+  // HTML 이스케이프
+  const escaped = escapeHtml(withPlaceholder);
+  // 플레이스홀더를 <br>로 복원
+  return escaped.replace(new RegExp(placeholder, 'g'), '<br>');
+}
+
 function formatDate(dateStr) {
   if (!dateStr || dateStr.length !== 8) return dateStr;
   return `${dateStr.substring(0,4)}.${dateStr.substring(4,6)}.${dateStr.substring(6,8)}`;
@@ -941,9 +959,9 @@ function updatePlaceInfo(place) {
       <label>이름</label>
       <span>${escapeHtml(place.name)}</span>
     </div>
-    <div class="info-row">
+    <div class="info-row" style="flex-direction: column; align-items: flex-start;">
       <label>설명</label>
-      <span>${escapeHtml(place.description || '없음')}</span>
+      <span style="margin-top: 0.3rem; line-height: 1.5;">${escapeHtmlKeepBr(place.description || '없음')}</span>
     </div>
     <div class="info-row">
       <label>위도</label>
