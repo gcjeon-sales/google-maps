@@ -89,6 +89,23 @@ function setupEventListeners() {
     closeAllModals();
     showSettingsModal();
   });
+
+  // API 키 표시/숨기기 토글
+  document.querySelectorAll('.btn-toggle-visibility').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.dataset.target;
+      const input = document.getElementById(targetId);
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.classList.add('active');
+        btn.textContent = '🙈';
+      } else {
+        input.type = 'password';
+        btn.classList.remove('active');
+        btn.textContent = '👁️';
+      }
+    });
+  });
 }
 
 // ============================================
@@ -836,6 +853,15 @@ function showSettingsModal() {
   document.getElementById('naverClientId').value = config.naverClientId;
   document.getElementById('naverClientSecret').value = config.naverClientSecret;
   document.getElementById('kakaoApiKey').value = config.kakaoApiKey;
+
+  // 보안: 모달 열릴 때 모든 API 키 필드를 password로 리셋
+  document.querySelectorAll('.btn-toggle-visibility').forEach(btn => {
+    const targetId = btn.dataset.target;
+    const input = document.getElementById(targetId);
+    input.type = 'password';
+    btn.classList.remove('active');
+    btn.textContent = '👁️';
+  });
 }
 
 function showApiGuideModal() {

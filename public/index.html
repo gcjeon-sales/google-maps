@@ -150,21 +150,33 @@
       <div class="modal-body">
         <div class="form-group">
           <label>Google Maps API Key</label>
-          <input type="text" id="googleApiKey" placeholder="AIza...">
+          <div class="input-with-toggle">
+            <input type="password" id="googleApiKey" placeholder="AIza...">
+            <button type="button" class="btn-toggle-visibility" data-target="googleApiKey" title="표시/숨기기">👁️</button>
+          </div>
           <p class="help-text">Google Cloud Console에서 발급</p>
         </div>
         <div class="form-group">
           <label>네이버 Client ID</label>
-          <input type="text" id="naverClientId" placeholder="클라이언트 ID">
+          <div class="input-with-toggle">
+            <input type="password" id="naverClientId" placeholder="클라이언트 ID">
+            <button type="button" class="btn-toggle-visibility" data-target="naverClientId" title="표시/숨기기">👁️</button>
+          </div>
         </div>
         <div class="form-group">
           <label>네이버 Client Secret</label>
-          <input type="password" id="naverClientSecret" placeholder="클라이언트 시크릿">
+          <div class="input-with-toggle">
+            <input type="password" id="naverClientSecret" placeholder="클라이언트 시크릿">
+            <button type="button" class="btn-toggle-visibility" data-target="naverClientSecret" title="표시/숨기기">👁️</button>
+          </div>
           <p class="help-text">네이버 개발자센터에서 발급</p>
         </div>
         <div class="form-group">
           <label>Kakao REST API Key</label>
-          <input type="text" id="kakaoApiKey" placeholder="REST API 키">
+          <div class="input-with-toggle">
+            <input type="password" id="kakaoApiKey" placeholder="REST API 키">
+            <button type="button" class="btn-toggle-visibility" data-target="kakaoApiKey" title="표시/숨기기">👁️</button>
+          </div>
           <p class="help-text">주소→좌표 변환용 (Kakao Developers에서 발급)</p>
         </div>
       </div>
