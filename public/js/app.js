@@ -362,27 +362,42 @@ async function handleTakeoutFileUpload(e) {
     if (data.success) {
       let places = data.places;
 
-      // 1단계: URL에서 좌표 추출 시도 (URL이 있는 장소)
+      // 1단계: URL에서 좌표 추출 시도 (20개씩 배치 처리)
       const placesWithUrl = places.filter(p => p.url && !p.coordinates);
       if (placesWithUrl.length > 0) {
-        document.getElementById('placesList').innerHTML =
-          `<div class="loading"></div><p style="text-align:center;margin-top:1rem;">URL에서 좌표 추출 중... (${placesWithUrl.length}개)</p>`;
+        const BATCH_SIZE = 20;
+        let totalSuccess = 0;
+        let totalFail = 0;
 
-        try {
-          const urlResponse = await fetch('/api/extract-coords-batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ places: places })
-          });
+        for (let i = 0; i < places.length; i += BATCH_SIZE) {
+          const batch = places.slice(i, i + BATCH_SIZE);
+          const progress = Math.min(i + BATCH_SIZE, places.length);
 
-          const urlData = await urlResponse.json();
-          if (urlData.success) {
-            places = urlData.places;
-            console.log(`URL 좌표 추출: ${urlData.successCount}개 성공, ${urlData.failCount}개 실패`);
+          document.getElementById('placesList').innerHTML =
+            `<div class="loading"></div><p style="text-align:center;margin-top:1rem;">URL에서 좌표 추출 중... (${progress}/${places.length})</p>`;
+
+          try {
+            const urlResponse = await fetch('/api/extract-coords-batch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ places: batch })
+            });
+
+            const urlData = await urlResponse.json();
+            if (urlData.success) {
+              // 결과를 원래 배열에 병합
+              urlData.places.forEach((p, idx) => {
+                places[i + idx] = p;
+              });
+              totalSuccess += urlData.successCount;
+              totalFail += urlData.failCount;
+            }
+          } catch (err) {
+            console.error(`배치 ${i}-${i + BATCH_SIZE} 실패:`, err);
           }
-        } catch (err) {
-          console.error('URL 좌표 추출 실패:', err);
         }
+
+        console.log(`URL 좌표 추출 완료: ${totalSuccess}개 성공, ${totalFail}개 실패`);
       }
 
       // 2단계: 아직 좌표가 없는 장소는 Kakao 지오코딩
