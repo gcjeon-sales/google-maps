@@ -504,10 +504,41 @@ app.post('/api/parse-toilet', upload.single('file'), async (req, res) => {
     const sheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(sheet);
 
-    // 파일명에서 지역 추출 시도
-    const filename = req.file.originalname;
-    const regionMatch = filename.match(/([가-힣]+(?:도|시|군|구))/);
-    const region = regionMatch ? regionMatch[1] : '기타';
+    // 파일명에서 지역 추출 시도 (인코딩 처리)
+    let filename = req.file.originalname;
+    // URL 인코딩된 파일명 디코딩
+    try {
+      filename = decodeURIComponent(filename);
+    } catch (e) {
+      // 디코딩 실패 시 Buffer로 변환 시도
+      try {
+        filename = Buffer.from(filename, 'latin1').toString('utf8');
+      } catch (e2) {
+        console.log('파일명 디코딩 실패:', filename);
+      }
+    }
+    console.log('처리된 파일명:', filename);
+
+    // 지역 패턴 매칭 (광역시/도/시/군/구)
+    const regionPatterns = [
+      /서울/, /부산/, /대구/, /인천/, /광주/, /대전/, /울산/, /세종/,
+      /경기/, /강원/, /충북/, /충남/, /전북/, /전남/, /경북/, /경남/, /제주/
+    ];
+
+    let region = '기타';
+    for (const pattern of regionPatterns) {
+      if (pattern.test(filename)) {
+        region = filename.match(pattern)[0];
+        // 도/시 붙이기
+        if (['경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남'].includes(region)) {
+          region += '도';
+        } else if (['서울', '부산', '대구', '인천', '광주', '대전', '울산'].includes(region)) {
+          region += '시';
+        }
+        break;
+      }
+    }
+    console.log('추출된 지역:', region);
 
     // 공중화장실 표준 데이터 필드 매핑
     const newToilets = data.map((row, index) => {
