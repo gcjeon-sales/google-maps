@@ -677,6 +677,9 @@ function selectPlace(place, index) {
 
   // 정보 탭 업데이트
   updatePlaceInfo(place);
+
+  // 자동 후기 검색 (API 설정되어 있으면)
+  autoSearchReviews();
 }
 
 // ============================================
@@ -730,6 +733,48 @@ function searchNearbyToilets(place) {
 // ============================================
 // 네이버 검색
 // ============================================
+// 자동 후기 검색 (장소 선택 시 자동 호출, 알림 없음)
+async function autoSearchReviews() {
+  // API 설정이 없으면 조용히 스킵
+  if (!state.selectedPlace || !config.naverClientId || !config.naverClientSecret) {
+    return;
+  }
+
+  const additionalKeyword = document.getElementById('additionalKeyword').value.trim();
+  const query = `${state.selectedPlace.name} ${additionalKeyword || '차박'}`;
+
+  const container = document.getElementById('reviewResults');
+  showLoading('reviewResults');
+
+  // 분석 섹션 초기화
+  document.getElementById('analysisSection').classList.add('hidden');
+
+  try {
+    const response = await fetch('/api/naver-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        clientId: config.naverClientId,
+        clientSecret: config.naverClientSecret,
+        type: 'blog'
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      displaySearchResults(data.items, data.analysis);
+    } else {
+      container.innerHTML = `<p class="empty-message">후기를 찾을 수 없습니다.</p>`;
+    }
+  } catch (error) {
+    container.innerHTML = `<p class="empty-message">후기 검색 중 오류가 발생했습니다.</p>`;
+    console.error(error);
+  }
+}
+
+// 수동 후기 검색 (버튼 클릭 시)
 async function searchReviews() {
   if (!state.selectedPlace) {
     alert('먼저 장소를 선택해주세요.');
