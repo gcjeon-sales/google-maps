@@ -530,16 +530,31 @@ app.post('/api/extract-coords-from-url', async (req, res) => {
         });
       }
 
-      // 패턴 3: window.APP_INITIALIZATION_STATE 내의 좌표
-      const pattern3 = html.match(/\[\[(-?\d+\.?\d*),(-?\d+\.?\d*)\],/);
+      // 패턴 3: window.APP_INITIALIZATION_STATE 내의 좌표 (정수형 - 10^7로 나눠야 함)
+      const pattern3 = html.match(/\[\[(-?\d{8,10}),(-?\d{9,11})\]/);
       if (pattern3) {
+        let lat = parseFloat(pattern3[1]);
+        let lng = parseFloat(pattern3[2]);
+        // 정수형 좌표를 실수로 변환 (대략 10^7 스케일)
+        if (lat > 1000000) lat = lat / 10000000;
+        if (lng > 1000000) lng = lng / 10000000;
+        return res.json({
+          success: true,
+          coordinates: { lat, lng },
+          source: 'html_pattern3'
+        });
+      }
+
+      // 패턴 4: 더 정확한 좌표 패턴 검색
+      const pattern4 = html.match(/\\"lat\\":(-?\d+\.?\d*),\\"lng\\":(-?\d+\.?\d*)/);
+      if (pattern4) {
         return res.json({
           success: true,
           coordinates: {
-            lat: parseFloat(pattern3[1]),
-            lng: parseFloat(pattern3[2])
+            lat: parseFloat(pattern4[1]),
+            lng: parseFloat(pattern4[2])
           },
-          source: 'html_pattern3'
+          source: 'html_pattern4'
         });
       }
 
@@ -616,20 +631,38 @@ app.post('/api/extract-coords-batch', async (req, res) => {
           } else {
             // HTML에서 추출 시도
             const html = await response.text();
-            const patterns = [
-              /\[null,null,(-?\d+\.?\d*),(-?\d+\.?\d*)\]/,
-              /"center"\s*:\s*\{\s*"lat"\s*:\s*(-?\d+\.?\d*)\s*,\s*"lng"\s*:\s*(-?\d+\.?\d*)/,
-              /\[\[(-?\d+\.?\d*),(-?\d+\.?\d*)\],/
-            ];
 
-            for (const pattern of patterns) {
-              const match = html.match(pattern);
+            // 패턴 1: [null,null,lat,lng]
+            let match = html.match(/\[null,null,(-?\d+\.?\d*),(-?\d+\.?\d*)\]/);
+            if (match) {
+              coords = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            }
+
+            // 패턴 2: "center":{"lat":xx,"lng":xx}
+            if (!coords) {
+              match = html.match(/"center"\s*:\s*\{\s*"lat"\s*:\s*(-?\d+\.?\d*)\s*,\s*"lng"\s*:\s*(-?\d+\.?\d*)/);
               if (match) {
-                coords = {
-                  lat: parseFloat(match[1]),
-                  lng: parseFloat(match[2])
-                };
-                break;
+                coords = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+              }
+            }
+
+            // 패턴 3: 정수형 좌표 [[lat,lng]]
+            if (!coords) {
+              match = html.match(/\[\[(-?\d{8,10}),(-?\d{9,11})\]/);
+              if (match) {
+                let lat = parseFloat(match[1]);
+                let lng = parseFloat(match[2]);
+                if (lat > 1000000) lat = lat / 10000000;
+                if (lng > 1000000) lng = lng / 10000000;
+                coords = { lat, lng };
+              }
+            }
+
+            // 패턴 4: \"lat\":xx,\"lng\":xx
+            if (!coords) {
+              match = html.match(/\\"lat\\":(-?\d+\.?\d*),\\"lng\\":(-?\d+\.?\d*)/);
+              if (match) {
+                coords = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
               }
             }
           }
