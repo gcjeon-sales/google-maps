@@ -340,7 +340,7 @@ async function handleKmlUrlLoad() {
 }
 
 // ============================================
-// Google Takeout JSON 처리
+// Google Takeout 처리 (CSV/JSON)
 // ============================================
 async function handleTakeoutFileUpload(e) {
   const file = e.target.files[0];
@@ -351,6 +351,8 @@ async function handleTakeoutFileUpload(e) {
 
   try {
     showLoading('placesList');
+    document.getElementById('placesList').innerHTML = '<div class="loading"></div><p style="text-align:center;margin-top:1rem;">파일 파싱 중...</p>';
+
     const response = await fetch('/api/parse-takeout', {
       method: 'POST',
       body: formData
@@ -358,16 +360,41 @@ async function handleTakeoutFileUpload(e) {
 
     const data = await response.json();
     if (data.success) {
-      // Geocoding 필요한 장소 확인
-      const placesNeedGeocode = data.places.filter(p => p.needsGeocode && (p.address || p.name));
+      let places = data.places;
 
-      if (placesNeedGeocode.length > 0) {
-        // Geocoding 진행
-        const geocodedPlaces = await geocodePlaces(data.places);
-        state.places = geocodedPlaces;
-      } else {
-        state.places = data.places;
+      // 1단계: URL에서 좌표 추출 시도 (URL이 있는 장소)
+      const placesWithUrl = places.filter(p => p.url && !p.coordinates);
+      if (placesWithUrl.length > 0) {
+        document.getElementById('placesList').innerHTML =
+          `<div class="loading"></div><p style="text-align:center;margin-top:1rem;">URL에서 좌표 추출 중... (${placesWithUrl.length}개)</p>`;
+
+        try {
+          const urlResponse = await fetch('/api/extract-coords-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ places: places })
+          });
+
+          const urlData = await urlResponse.json();
+          if (urlData.success) {
+            places = urlData.places;
+            console.log(`URL 좌표 추출: ${urlData.successCount}개 성공, ${urlData.failCount}개 실패`);
+          }
+        } catch (err) {
+          console.error('URL 좌표 추출 실패:', err);
+        }
       }
+
+      // 2단계: 아직 좌표가 없는 장소는 Kakao 지오코딩
+      const placesNeedGeocode = places.filter(p => !p.coordinates && (p.address || p.name));
+      if (placesNeedGeocode.length > 0 && config.kakaoApiKey) {
+        document.getElementById('placesList').innerHTML =
+          `<div class="loading"></div><p style="text-align:center;margin-top:1rem;">Kakao 지오코딩 중... (${placesNeedGeocode.length}개)</p>`;
+
+        places = await geocodePlaces(places);
+      }
+
+      state.places = places;
 
       // 좌표가 있는 장소만 필터링
       const validPlaces = state.places.filter(p => p.coordinates && p.coordinates.lat && p.coordinates.lng);
@@ -383,6 +410,8 @@ async function handleTakeoutFileUpload(e) {
       const failedCount = data.places.length - validPlaces.length;
       if (failedCount > 0) {
         alert(`${data.places.length}개 중 ${validPlaces.length}개 장소를 로드했습니다.\n(${failedCount}개는 좌표를 찾을 수 없습니다)`);
+      } else {
+        alert(`${validPlaces.length}개 장소를 모두 로드했습니다.`);
       }
     } else {
       alert(data.error);

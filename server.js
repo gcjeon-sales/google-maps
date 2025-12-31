@@ -453,6 +453,223 @@ function parseCSVLine(line) {
 }
 
 // ============================================
+// Google Maps URL에서 좌표 추출
+// ============================================
+app.post('/api/extract-coords-from-url', async (req, res) => {
+  try {
+    const { url } = req.body;
+
+    if (!url) {
+      return res.json({ success: false, error: 'URL이 필요합니다.' });
+    }
+
+    // URL에서 직접 좌표 추출 시도 (@lat,lng 형식)
+    const coordMatch = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (coordMatch) {
+      return res.json({
+        success: true,
+        coordinates: {
+          lat: parseFloat(coordMatch[1]),
+          lng: parseFloat(coordMatch[2])
+        },
+        source: 'url_direct'
+      });
+    }
+
+    // Google Maps URL 요청하여 리다이렉트된 URL에서 좌표 추출
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      const finalUrl = response.url;
+
+      // 리다이렉트된 URL에서 좌표 추출
+      const redirectCoordMatch = finalUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (redirectCoordMatch) {
+        return res.json({
+          success: true,
+          coordinates: {
+            lat: parseFloat(redirectCoordMatch[1]),
+            lng: parseFloat(redirectCoordMatch[2])
+          },
+          source: 'url_redirect'
+        });
+      }
+
+      // HTML 본문에서 좌표 추출 시도
+      const html = await response.text();
+
+      // 패턴 1: [null,null,lat,lng]
+      const pattern1 = html.match(/\[null,null,(-?\d+\.?\d*),(-?\d+\.?\d*)\]/);
+      if (pattern1) {
+        return res.json({
+          success: true,
+          coordinates: {
+            lat: parseFloat(pattern1[1]),
+            lng: parseFloat(pattern1[2])
+          },
+          source: 'html_pattern1'
+        });
+      }
+
+      // 패턴 2: "center":{"lat":xx,"lng":xx}
+      const pattern2 = html.match(/"center"\s*:\s*\{\s*"lat"\s*:\s*(-?\d+\.?\d*)\s*,\s*"lng"\s*:\s*(-?\d+\.?\d*)/);
+      if (pattern2) {
+        return res.json({
+          success: true,
+          coordinates: {
+            lat: parseFloat(pattern2[1]),
+            lng: parseFloat(pattern2[2])
+          },
+          source: 'html_pattern2'
+        });
+      }
+
+      // 패턴 3: window.APP_INITIALIZATION_STATE 내의 좌표
+      const pattern3 = html.match(/\[\[(-?\d+\.?\d*),(-?\d+\.?\d*)\],/);
+      if (pattern3) {
+        return res.json({
+          success: true,
+          coordinates: {
+            lat: parseFloat(pattern3[1]),
+            lng: parseFloat(pattern3[2])
+          },
+          source: 'html_pattern3'
+        });
+      }
+
+    } catch (fetchError) {
+      console.log('URL fetch 실패:', fetchError.message);
+    }
+
+    res.json({ success: false, error: '좌표를 추출할 수 없습니다.' });
+
+  } catch (error) {
+    console.error('좌표 추출 에러:', error);
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// 배치 URL 좌표 추출
+app.post('/api/extract-coords-batch', async (req, res) => {
+  try {
+    const { places } = req.body;
+
+    if (!places || !Array.isArray(places)) {
+      return res.status(400).json({ error: 'places 배열이 필요합니다.' });
+    }
+
+    const results = [];
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const place of places) {
+      // 이미 좌표가 있으면 스킵
+      if (place.coordinates) {
+        results.push(place);
+        successCount++;
+        continue;
+      }
+
+      // URL이 없으면 스킵
+      if (!place.url) {
+        results.push(place);
+        failCount++;
+        continue;
+      }
+
+      try {
+        // URL에서 직접 좌표 추출
+        let coords = null;
+
+        const coordMatch = place.url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+        if (coordMatch) {
+          coords = {
+            lat: parseFloat(coordMatch[1]),
+            lng: parseFloat(coordMatch[2])
+          };
+        }
+
+        // 직접 추출 실패 시 URL 요청
+        if (!coords) {
+          const response = await fetch(place.url, {
+            method: 'GET',
+            redirect: 'follow',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+
+          const finalUrl = response.url;
+          const redirectMatch = finalUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+
+          if (redirectMatch) {
+            coords = {
+              lat: parseFloat(redirectMatch[1]),
+              lng: parseFloat(redirectMatch[2])
+            };
+          } else {
+            // HTML에서 추출 시도
+            const html = await response.text();
+            const patterns = [
+              /\[null,null,(-?\d+\.?\d*),(-?\d+\.?\d*)\]/,
+              /"center"\s*:\s*\{\s*"lat"\s*:\s*(-?\d+\.?\d*)\s*,\s*"lng"\s*:\s*(-?\d+\.?\d*)/,
+              /\[\[(-?\d+\.?\d*),(-?\d+\.?\d*)\],/
+            ];
+
+            for (const pattern of patterns) {
+              const match = html.match(pattern);
+              if (match) {
+                coords = {
+                  lat: parseFloat(match[1]),
+                  lng: parseFloat(match[2])
+                };
+                break;
+              }
+            }
+          }
+        }
+
+        if (coords) {
+          place.coordinates = coords;
+          place.needsGeocode = false;
+          successCount++;
+        } else {
+          failCount++;
+        }
+
+        results.push(place);
+
+        // 요청 간격 (서버 부하 방지)
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+      } catch (err) {
+        console.log(`URL 좌표 추출 실패 (${place.name}):`, err.message);
+        results.push(place);
+        failCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      places: results,
+      totalProcessed: places.length,
+      successCount,
+      failCount
+    });
+
+  } catch (error) {
+    console.error('배치 좌표 추출 에러:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
 // Geocoding API (주소 → 좌표 변환)
 // ============================================
 app.post('/api/geocode', async (req, res) => {
