@@ -654,6 +654,7 @@ app.post('/api/parse-toilet', upload.single('file'), async (req, res) => {
         femaleToilet: row['여성용-대변기수'] || row['여성용대변기수'] || 0,
         disabledToilet: row['장애인용-남성대변기수'] || row['장애인용남성대변기수'] || 0,
         openTime: row['개방시간'] || row['운영시간'] || '24시간',
+        openTimeDetail: row['개방시간상세'] || row['운영시간상세'] || '',
         manager: row['관리기관명'] || row['관리기관'] || '',
         phone: row['전화번호'] || row['연락처'] || '',
         region: region,

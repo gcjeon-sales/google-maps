@@ -722,6 +722,7 @@ function searchNearbyToilets(place) {
         ${toilet.femaleToilet ? `<div class="detail-item">여성 대변기: <span>${toilet.femaleToilet}</span></div>` : ''}
         ${toilet.disabledToilet ? `<div class="detail-item">장애인용: <span>${toilet.disabledToilet}</span></div>` : ''}
         ${toilet.openTime ? `<div class="detail-item">운영시간: <span>${escapeHtml(toilet.openTime)}</span></div>` : ''}
+        ${toilet.openTimeDetail ? `<div class="detail-item" style="grid-column: 1 / -1;">상세시간: <span>${escapeHtml(toilet.openTimeDetail)}</span></div>` : ''}
       </div>
     </div>
   `).join('');
