@@ -362,19 +362,32 @@ async function handleTakeoutFileUpload(e) {
     if (data.success) {
       let places = data.places;
 
-      // 1단계: URL에서 좌표 추출 시도 (20개씩 배치 처리)
-      const placesWithUrl = places.filter(p => p.url && !p.coordinates);
-      if (placesWithUrl.length > 0) {
+      // 1단계: Kakao 지오코딩 먼저 시도 (빠름)
+      const placesNeedGeocode = places.filter(p => !p.coordinates && (p.address || p.name));
+      if (placesNeedGeocode.length > 0 && config.kakaoApiKey) {
+        document.getElementById('placesList').innerHTML =
+          `<div class="loading"></div><p style="text-align:center;margin-top:1rem;">Kakao 지오코딩 중... (${placesNeedGeocode.length}개)</p>`;
+
+        places = await geocodePlaces(places);
+      }
+
+      // 2단계: 아직 좌표가 없는 장소만 URL에서 좌표 추출 (느림)
+      const placesNeedUrlExtract = places.filter(p => p.url && !p.coordinates);
+      if (placesNeedUrlExtract.length > 0) {
         const BATCH_SIZE = 20;
         let totalSuccess = 0;
         let totalFail = 0;
 
-        for (let i = 0; i < places.length; i += BATCH_SIZE) {
-          const batch = places.slice(i, i + BATCH_SIZE);
-          const progress = Math.min(i + BATCH_SIZE, places.length);
+        // 좌표가 없는 장소의 인덱스 목록
+        const needUrlIndices = places.map((p, idx) => (p.url && !p.coordinates) ? idx : -1).filter(i => i >= 0);
+
+        for (let i = 0; i < needUrlIndices.length; i += BATCH_SIZE) {
+          const batchIndices = needUrlIndices.slice(i, i + BATCH_SIZE);
+          const batch = batchIndices.map(idx => places[idx]);
+          const progress = Math.min(i + BATCH_SIZE, needUrlIndices.length);
 
           document.getElementById('placesList').innerHTML =
-            `<div class="loading"></div><p style="text-align:center;margin-top:1rem;">URL에서 좌표 추출 중... (${progress}/${places.length})</p>`;
+            `<div class="loading"></div><p style="text-align:center;margin-top:1rem;">URL에서 좌표 추출 중... (${progress}/${needUrlIndices.length}개 미변환 장소)</p>`;
 
           try {
             const urlResponse = await fetch('/api/extract-coords-batch', {
@@ -386,8 +399,8 @@ async function handleTakeoutFileUpload(e) {
             const urlData = await urlResponse.json();
             if (urlData.success) {
               // 결과를 원래 배열에 병합
-              urlData.places.forEach((p, idx) => {
-                places[i + idx] = p;
+              urlData.places.forEach((p, batchIdx) => {
+                places[batchIndices[batchIdx]] = p;
               });
               totalSuccess += urlData.successCount;
               totalFail += urlData.failCount;
@@ -398,15 +411,6 @@ async function handleTakeoutFileUpload(e) {
         }
 
         console.log(`URL 좌표 추출 완료: ${totalSuccess}개 성공, ${totalFail}개 실패`);
-      }
-
-      // 2단계: 아직 좌표가 없는 장소는 Kakao 지오코딩
-      const placesNeedGeocode = places.filter(p => !p.coordinates && (p.address || p.name));
-      if (placesNeedGeocode.length > 0 && config.kakaoApiKey) {
-        document.getElementById('placesList').innerHTML =
-          `<div class="loading"></div><p style="text-align:center;margin-top:1rem;">Kakao 지오코딩 중... (${placesNeedGeocode.length}개)</p>`;
-
-        places = await geocodePlaces(places);
       }
 
       state.places = places;
