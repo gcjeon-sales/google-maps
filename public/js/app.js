@@ -717,6 +717,7 @@ function searchNearbyToilets(place) {
       <p>${escapeHtml(toilet.address)}</p>
       <span class="distance">${toilet.distance}m</span>
       <div class="toilet-detail">
+        ${toilet.ownerType ? `<div class="detail-item">소유구분: <span>${escapeHtml(toilet.ownerType)}</span></div>` : ''}
         ${toilet.maleToilet ? `<div class="detail-item">남성 대변기: <span>${toilet.maleToilet}</span></div>` : ''}
         ${toilet.maleUrinal ? `<div class="detail-item">남성 소변기: <span>${toilet.maleUrinal}</span></div>` : ''}
         ${toilet.femaleToilet ? `<div class="detail-item">여성 대변기: <span>${toilet.femaleToilet}</span></div>` : ''}
