@@ -504,41 +504,64 @@ app.post('/api/parse-toilet', upload.single('file'), async (req, res) => {
     const sheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(sheet);
 
-    // 파일명에서 지역 추출 시도 (인코딩 처리)
-    let filename = req.file.originalname;
-    // URL 인코딩된 파일명 디코딩
-    try {
-      filename = decodeURIComponent(filename);
-    } catch (e) {
-      // 디코딩 실패 시 Buffer로 변환 시도
-      try {
-        filename = Buffer.from(filename, 'latin1').toString('utf8');
-      } catch (e2) {
-        console.log('파일명 디코딩 실패:', filename);
-      }
-    }
-    console.log('처리된 파일명:', filename);
+    // 지역 매핑 테이블
+    const regionMap = {
+      '서울': '서울시', '서울특별시': '서울시', '서울시': '서울시',
+      '부산': '부산시', '부산광역시': '부산시', '부산시': '부산시',
+      '대구': '대구시', '대구광역시': '대구시', '대구시': '대구시',
+      '인천': '인천시', '인천광역시': '인천시', '인천시': '인천시',
+      '광주': '광주시', '광주광역시': '광주시', '광주시': '광주시',
+      '대전': '대전시', '대전광역시': '대전시', '대전시': '대전시',
+      '울산': '울산시', '울산광역시': '울산시', '울산시': '울산시',
+      '세종': '세종시', '세종특별자치시': '세종시', '세종시': '세종시',
+      '경기': '경기도', '경기도': '경기도',
+      '강원': '강원도', '강원도': '강원도', '강원특별자치도': '강원도',
+      '충북': '충청북도', '충청북도': '충청북도',
+      '충남': '충청남도', '충청남도': '충청남도',
+      '전북': '전라북도', '전라북도': '전라북도', '전북특별자치도': '전라북도',
+      '전남': '전라남도', '전라남도': '전라남도',
+      '경북': '경상북도', '경상북도': '경상북도',
+      '경남': '경상남도', '경상남도': '경상남도',
+      '제주': '제주도', '제주도': '제주도', '제주특별자치도': '제주도'
+    };
 
-    // 지역 패턴 매칭 (광역시/도/시/군/구)
-    const regionPatterns = [
-      /서울/, /부산/, /대구/, /인천/, /광주/, /대전/, /울산/, /세종/,
-      /경기/, /강원/, /충북/, /충남/, /전북/, /전남/, /경북/, /경남/, /제주/
-    ];
+    // 데이터의 주소에서 지역 추출 (첫 10개 샘플링)
+    function extractRegionFromData(rows) {
+      const regionCounts = {};
+      const sampleSize = Math.min(rows.length, 20);
 
-    let region = '기타';
-    for (const pattern of regionPatterns) {
-      if (pattern.test(filename)) {
-        region = filename.match(pattern)[0];
-        // 도/시 붙이기
-        if (['경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남'].includes(region)) {
-          region += '도';
-        } else if (['서울', '부산', '대구', '인천', '광주', '대전', '울산'].includes(region)) {
-          region += '시';
+      for (let i = 0; i < sampleSize; i++) {
+        const row = rows[i];
+        const address = row['소재지도로명주소'] || row['소재지지번주소'] ||
+                       row['도로명주소'] || row['주소'] || '';
+
+        if (!address) continue;
+
+        // 주소에서 지역명 추출
+        for (const [key, value] of Object.entries(regionMap)) {
+          if (address.includes(key)) {
+            regionCounts[value] = (regionCounts[value] || 0) + 1;
+            break;
+          }
         }
-        break;
       }
+
+      // 가장 많이 나온 지역 반환
+      let maxRegion = '기타';
+      let maxCount = 0;
+      for (const [region, count] of Object.entries(regionCounts)) {
+        if (count > maxCount) {
+          maxCount = count;
+          maxRegion = region;
+        }
+      }
+
+      return maxRegion;
     }
-    console.log('추출된 지역:', region);
+
+    // 데이터에서 지역 추출
+    const region = extractRegionFromData(data);
+    console.log('데이터에서 추출된 지역:', region);
 
     // 공중화장실 표준 데이터 필드 매핑
     const newToilets = data.map((row, index) => {
