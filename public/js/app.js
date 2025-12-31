@@ -33,6 +33,9 @@ function initApp() {
     showApiGuideModal();
   }
 
+  // 저장된 장소 데이터 자동 로드
+  loadSavedPlacesData();
+
   // 저장된 화장실 데이터 자동 로드
   loadSavedToiletData();
 }
@@ -57,6 +60,9 @@ function setupEventListeners() {
 
   // 화장실 데이터 초기화
   document.getElementById('resetToiletBtn').addEventListener('click', resetToiletData);
+
+  // 장소 데이터 초기화
+  document.getElementById('resetPlacesBtn').addEventListener('click', resetPlacesData);
 
   // 장소 검색
   document.getElementById('placeSearch').addEventListener('input', filterPlaces);
@@ -137,6 +143,17 @@ window.initMap = function() {
   });
 
   state.infoWindow = new google.maps.InfoWindow();
+
+  // 저장된 장소 데이터가 있으면 마커 추가
+  if (state.places.length > 0) {
+    addPlaceMarkers();
+  }
+
+  // 콜백이 설정되어 있으면 실행
+  if (window.onMapLoaded) {
+    window.onMapLoaded();
+    window.onMapLoaded = null;
+  }
 };
 
 function addPlaceMarkers() {
@@ -252,8 +269,9 @@ async function handleKmlFileUpload(e) {
 
       renderPlacesList();
       addPlaceMarkers();
-      document.getElementById('placesCount').textContent = `${validPlaces.length}개 장소 로드됨`;
-      document.getElementById('placesCount').classList.remove('hidden');
+
+      // 서버에 저장 및 UI 업데이트
+      await savePlacesData(validPlaces, `KML: ${file.name}`);
 
       // Geocoding 실패한 장소가 있으면 알림
       const failedCount = data.places.length - validPlaces.length;
@@ -303,8 +321,9 @@ async function handleKmlUrlLoad() {
 
       renderPlacesList();
       addPlaceMarkers();
-      document.getElementById('placesCount').textContent = `${validPlaces.length}개 장소 로드됨`;
-      document.getElementById('placesCount').classList.remove('hidden');
+
+      // 서버에 저장 및 UI 업데이트
+      await savePlacesData(validPlaces, `URL: Google My Maps`);
 
       // Geocoding 실패한 장소가 있으면 알림
       const failedCount = data.places.length - validPlaces.length;
@@ -356,8 +375,9 @@ async function handleTakeoutFileUpload(e) {
 
       renderPlacesList();
       addPlaceMarkers();
-      document.getElementById('placesCount').textContent = `${validPlaces.length}개 장소 로드됨`;
-      document.getElementById('placesCount').classList.remove('hidden');
+
+      // 서버에 저장 및 UI 업데이트
+      await savePlacesData(validPlaces, `Takeout: ${file.name}`);
 
       // 결과 알림
       const failedCount = data.places.length - validPlaces.length;
@@ -370,6 +390,108 @@ async function handleTakeoutFileUpload(e) {
   } catch (error) {
     alert('파일 처리 중 오류가 발생했습니다.');
     console.error(error);
+  }
+}
+
+// ============================================
+// 장소 데이터 저장/로드
+// ============================================
+
+// 저장된 장소 데이터 자동 로드
+async function loadSavedPlacesData() {
+  try {
+    const response = await fetch('/api/places');
+    const data = await response.json();
+
+    if (data.success && data.places && data.places.length > 0) {
+      state.places = data.places;
+      renderPlacesList();
+
+      // 지도가 로드되면 마커 추가
+      if (state.map) {
+        addPlaceMarkers();
+      } else {
+        // 지도 로드 후 마커 추가를 위한 콜백 설정
+        window.onMapLoaded = () => addPlaceMarkers();
+      }
+
+      updatePlacesInfoDisplay(data);
+    }
+  } catch (error) {
+    console.error('저장된 장소 데이터 로드 실패:', error);
+  }
+}
+
+// 장소 데이터 서버에 저장
+async function savePlacesData(places, source) {
+  try {
+    const response = await fetch('/api/places', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ places, source })
+    });
+
+    const data = await response.json();
+    if (data.success) {
+      updatePlacesInfoDisplay({
+        count: data.count,
+        source: source,
+        lastUpdate: data.lastUpdate
+      });
+    }
+  } catch (error) {
+    console.error('장소 데이터 저장 실패:', error);
+  }
+}
+
+// 장소 정보 UI 업데이트
+function updatePlacesInfoDisplay(data) {
+  const infoEl = document.getElementById('placesInfo');
+  const countEl = document.getElementById('placesCount');
+  const sourceEl = document.getElementById('placesSource');
+  const updateEl = document.getElementById('placesUpdate');
+
+  infoEl.classList.remove('hidden');
+  countEl.textContent = `${data.count || data.places?.length || 0}개 장소 로드됨`;
+
+  if (data.source) {
+    sourceEl.textContent = `출처: ${data.source}`;
+  }
+
+  if (data.lastUpdate) {
+    const updateDate = new Date(data.lastUpdate);
+    updateEl.textContent = `업데이트: ${updateDate.toLocaleDateString('ko-KR')} ${updateDate.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+}
+
+// 장소 데이터 초기화
+async function resetPlacesData() {
+  if (!confirm('모든 장소 데이터를 삭제하시겠습니까?')) return;
+
+  try {
+    const response = await fetch('/api/places', { method: 'DELETE' });
+    const data = await response.json();
+
+    if (data.success) {
+      state.places = [];
+
+      // 마커 제거
+      state.markers.forEach(marker => marker.setMap(null));
+      state.markers = [];
+
+      // UI 초기화
+      document.getElementById('placesInfo').classList.add('hidden');
+      document.getElementById('placesList').innerHTML = '<p class="empty-message">장소 데이터를 불러와주세요</p>';
+
+      // 상세 패널 초기화
+      document.getElementById('selectedPlaceName').textContent = '장소를 선택하세요';
+      document.getElementById('selectedPlaceDesc').textContent = '';
+
+      alert('장소 데이터가 초기화되었습니다.');
+    }
+  } catch (error) {
+    console.error('장소 데이터 삭제 실패:', error);
+    alert('삭제 중 오류가 발생했습니다.');
   }
 }
 

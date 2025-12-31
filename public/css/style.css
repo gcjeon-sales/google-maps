@@ -152,7 +152,8 @@ body {
   margin-top: 0.8rem;
 }
 
-/* 화장실 데이터 정보 */
+/* 장소/화장실 데이터 정보 */
+.places-info,
 .toilet-info {
   margin-top: 0.8rem;
   padding: 0.8rem;
@@ -161,9 +162,19 @@ body {
   position: relative;
 }
 
+.places-info {
+  background: #e8f5e9;
+}
+
+.places-info .info-badge,
 .toilet-info .info-badge {
   margin-top: 0;
   display: inline-block;
+}
+
+.places-info .info-badge {
+  background: #c8e6c9;
+  color: #2e7d32;
 }
 
 .info-regions {

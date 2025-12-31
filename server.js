@@ -11,13 +11,14 @@ const fetch = require('node-fetch');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 화장실 데이터 저장 경로
-const TOILET_DATA_DIR = path.join(__dirname, 'user_data');
-const TOILET_DATA_FILE = path.join(TOILET_DATA_DIR, 'toilets.json');
+// 데이터 저장 경로
+const USER_DATA_DIR = path.join(__dirname, 'user_data');
+const TOILET_DATA_FILE = path.join(USER_DATA_DIR, 'toilets.json');
+const PLACES_DATA_FILE = path.join(USER_DATA_DIR, 'places.json');
 
 // user_data 디렉토리 생성
-if (!fs.existsSync(TOILET_DATA_DIR)) {
-  fs.mkdirSync(TOILET_DATA_DIR, { recursive: true });
+if (!fs.existsSync(USER_DATA_DIR)) {
+  fs.mkdirSync(USER_DATA_DIR, { recursive: true });
 }
 
 // Middleware
@@ -167,6 +168,79 @@ function extractPlacesFromKML(kml) {
 
   return places;
 }
+
+// ============================================
+// 장소 데이터 저장/로드 API
+// ============================================
+
+// 저장된 장소 데이터 로드
+app.get('/api/places', (req, res) => {
+  try {
+    if (fs.existsSync(PLACES_DATA_FILE)) {
+      const data = JSON.parse(fs.readFileSync(PLACES_DATA_FILE, 'utf-8'));
+      res.json({
+        success: true,
+        places: data.places || [],
+        count: data.places?.length || 0,
+        lastUpdate: data.lastUpdate || null,
+        source: data.source || ''
+      });
+    } else {
+      res.json({
+        success: true,
+        places: [],
+        count: 0,
+        lastUpdate: null,
+        source: ''
+      });
+    }
+  } catch (error) {
+    console.error('장소 데이터 로드 에러:', error);
+    res.status(500).json({ error: '데이터 로드 중 오류가 발생했습니다.' });
+  }
+});
+
+// 장소 데이터 저장
+app.post('/api/places', (req, res) => {
+  try {
+    const { places, source } = req.body;
+
+    if (!places || !Array.isArray(places)) {
+      return res.status(400).json({ error: 'places 배열이 필요합니다.' });
+    }
+
+    const saveData = {
+      places: places,
+      count: places.length,
+      source: source || 'unknown',
+      lastUpdate: new Date().toISOString()
+    };
+
+    fs.writeFileSync(PLACES_DATA_FILE, JSON.stringify(saveData, null, 2));
+
+    res.json({
+      success: true,
+      count: places.length,
+      lastUpdate: saveData.lastUpdate
+    });
+  } catch (error) {
+    console.error('장소 데이터 저장 에러:', error);
+    res.status(500).json({ error: '데이터 저장 중 오류가 발생했습니다.' });
+  }
+});
+
+// 장소 데이터 삭제
+app.delete('/api/places', (req, res) => {
+  try {
+    if (fs.existsSync(PLACES_DATA_FILE)) {
+      fs.unlinkSync(PLACES_DATA_FILE);
+    }
+    res.json({ success: true, message: '장소 데이터가 초기화되었습니다.' });
+  } catch (error) {
+    console.error('장소 데이터 삭제 에러:', error);
+    res.status(500).json({ error: '데이터 삭제 중 오류가 발생했습니다.' });
+  }
+});
 
 // ============================================
 // Google Takeout JSON 파싱
