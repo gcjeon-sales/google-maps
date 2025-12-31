@@ -243,7 +243,7 @@ app.delete('/api/places', (req, res) => {
 });
 
 // ============================================
-// Google Takeout JSON 파싱
+// Google Takeout 파싱 (JSON + CSV 지원)
 // ============================================
 app.post('/api/parse-takeout', upload.single('file'), async (req, res) => {
   try {
@@ -252,105 +252,161 @@ app.post('/api/parse-takeout', upload.single('file'), async (req, res) => {
     }
 
     const content = req.file.buffer.toString('utf-8');
-    let data;
-
-    try {
-      data = JSON.parse(content);
-    } catch (e) {
-      return res.status(400).json({ error: 'JSON 파일 형식이 올바르지 않습니다.' });
-    }
-
+    const filename = req.file.originalname.toLowerCase();
     const places = [];
 
-    // GeoJSON FeatureCollection 형식 (Google Takeout 표준)
-    if (data.type === 'FeatureCollection' && Array.isArray(data.features)) {
-      for (const feature of data.features) {
-        if (feature.type === 'Feature' && feature.geometry) {
-          const props = feature.properties || {};
-          const geom = feature.geometry;
+    // CSV 파일 처리 (Google Takeout Saved Places)
+    if (filename.endsWith('.csv')) {
+      const lines = content.split('\n').map(line => line.trim()).filter(line => line);
 
-          let coordinates = null;
-          if (geom.type === 'Point' && Array.isArray(geom.coordinates)) {
-            coordinates = {
-              lng: geom.coordinates[0],
-              lat: geom.coordinates[1]
-            };
+      // 헤더 찾기 (제목,메모,URL,태그,댓글)
+      let headerIndex = lines.findIndex(line =>
+        line.includes('제목') || line.includes('Title') || line.toLowerCase().includes('title,')
+      );
+
+      if (headerIndex === -1) {
+        return res.status(400).json({ error: 'CSV 헤더를 찾을 수 없습니다.' });
+      }
+
+      // 헤더 파싱
+      const headers = parseCSVLine(lines[headerIndex]);
+      const titleIdx = headers.findIndex(h => h === '제목' || h.toLowerCase() === 'title');
+      const noteIdx = headers.findIndex(h => h === '메모' || h.toLowerCase() === 'note');
+      const urlIdx = headers.findIndex(h => h === 'URL' || h.toLowerCase() === 'url');
+
+      // 데이터 행 파싱
+      for (let i = headerIndex + 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line || line === ',,,,' || line.split(',').every(c => !c.trim())) continue;
+
+        const cols = parseCSVLine(line);
+        const title = cols[titleIdx]?.trim() || '';
+        const note = cols[noteIdx]?.trim() || '';
+        const url = cols[urlIdx]?.trim() || '';
+
+        if (!title && !url) continue;
+
+        // 장소명 결정 (제목이 없으면 URL에서 추출)
+        let name = title;
+        if (!name && url) {
+          // URL에서 장소명 추출 시도
+          const match = url.match(/\/place\/([^\/]+)/);
+          if (match) {
+            try {
+              name = decodeURIComponent(match[1].replace(/\+/g, ' '));
+            } catch (e) {
+              name = match[1];
+            }
           }
+        }
 
-          // 이름 추출 (여러 필드에서 시도)
-          const name = props.Title || props.name || props.Name ||
-                       props.title || props['Google Maps URL']?.split('/').pop() ||
-                       `장소 ${places.length + 1}`;
+        if (!name) continue;
 
-          // 주소 추출
-          const address = props.Location?.Address || props.address ||
-                          props.Address || props.location || '';
+        places.push({
+          name: name,
+          description: note || '',
+          coordinates: null,
+          address: '',
+          url: url,
+          needsGeocode: true
+        });
+      }
+    }
+    // JSON 파일 처리
+    else {
+      let data;
+      try {
+        data = JSON.parse(content);
+      } catch (e) {
+        return res.status(400).json({ error: 'JSON 파일 형식이 올바르지 않습니다.' });
+      }
+
+      // GeoJSON FeatureCollection 형식
+      if (data.type === 'FeatureCollection' && Array.isArray(data.features)) {
+        for (const feature of data.features) {
+          if (feature.type === 'Feature' && feature.geometry) {
+            const props = feature.properties || {};
+            const geom = feature.geometry;
+
+            let coordinates = null;
+            if (geom.type === 'Point' && Array.isArray(geom.coordinates)) {
+              coordinates = {
+                lng: geom.coordinates[0],
+                lat: geom.coordinates[1]
+              };
+            }
+
+            const name = props.Title || props.name || props.Name ||
+                         props.title || `장소 ${places.length + 1}`;
+            const address = props.Location?.Address || props.address ||
+                            props.Address || props.location || '';
+
+            places.push({
+              name: name,
+              description: address || props.Comment || props.description || '',
+              coordinates: coordinates,
+              address: address,
+              needsGeocode: !coordinates
+            });
+          }
+        }
+      }
+      // 배열 형식
+      else if (Array.isArray(data)) {
+        for (const item of data) {
+          const name = item.title || item.name || item.Title || `장소 ${places.length + 1}`;
+          let coordinates = null;
+
+          if (item.geometry?.location) {
+            coordinates = {
+              lat: item.geometry.location.lat,
+              lng: item.geometry.location.lng
+            };
+          } else if (item.location) {
+            coordinates = {
+              lat: item.location.latitude || item.location.lat,
+              lng: item.location.longitude || item.location.lng
+            };
+          } else if (item.lat && item.lng) {
+            coordinates = { lat: item.lat, lng: item.lng };
+          }
 
           places.push({
             name: name,
-            description: address || props.Comment || props.description || '',
+            description: item.address || item.description || '',
             coordinates: coordinates,
-            address: address,
+            address: item.address || '',
+            needsGeocode: !coordinates
+          });
+        }
+      }
+      // 단일 객체에 places 배열
+      else if (data.places && Array.isArray(data.places)) {
+        for (const item of data.places) {
+          const name = item.title || item.name || `장소 ${places.length + 1}`;
+          let coordinates = null;
+
+          if (item.location) {
+            coordinates = {
+              lat: item.location.latitude || item.location.lat,
+              lng: item.location.longitude || item.location.lng
+            };
+          }
+
+          places.push({
+            name: name,
+            description: item.address || item.description || '',
+            coordinates: coordinates,
+            address: item.address || '',
             needsGeocode: !coordinates
           });
         }
       }
     }
-    // 배열 형식 (일부 Takeout 버전)
-    else if (Array.isArray(data)) {
-      for (const item of data) {
-        const name = item.title || item.name || item.Title || `장소 ${places.length + 1}`;
-        let coordinates = null;
-
-        if (item.geometry?.location) {
-          coordinates = {
-            lat: item.geometry.location.lat,
-            lng: item.geometry.location.lng
-          };
-        } else if (item.location) {
-          coordinates = {
-            lat: item.location.latitude || item.location.lat,
-            lng: item.location.longitude || item.location.lng
-          };
-        } else if (item.lat && item.lng) {
-          coordinates = { lat: item.lat, lng: item.lng };
-        }
-
-        places.push({
-          name: name,
-          description: item.address || item.description || '',
-          coordinates: coordinates,
-          address: item.address || '',
-          needsGeocode: !coordinates
-        });
-      }
-    }
-    // 단일 객체에 places 배열이 있는 경우
-    else if (data.places && Array.isArray(data.places)) {
-      for (const item of data.places) {
-        const name = item.title || item.name || `장소 ${places.length + 1}`;
-        let coordinates = null;
-
-        if (item.location) {
-          coordinates = {
-            lat: item.location.latitude || item.location.lat,
-            lng: item.location.longitude || item.location.lng
-          };
-        }
-
-        places.push({
-          name: name,
-          description: item.address || item.description || '',
-          coordinates: coordinates,
-          address: item.address || '',
-          needsGeocode: !coordinates
-        });
-      }
-    }
 
     if (places.length === 0) {
       return res.status(400).json({
-        error: '장소 데이터를 찾을 수 없습니다. Google Takeout에서 내보낸 "저장한 장소" JSON 파일인지 확인해주세요.'
+        error: '장소 데이터를 찾을 수 없습니다. Google Takeout에서 내보낸 파일인지 확인해주세요.'
       });
     }
 
@@ -367,6 +423,34 @@ app.post('/api/parse-takeout', upload.single('file'), async (req, res) => {
     res.status(500).json({ error: '파일 처리 중 오류가 발생했습니다.' });
   }
 });
+
+// CSV 라인 파싱 (따옴표 처리)
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current);
+
+  return result;
+}
 
 // ============================================
 // Geocoding API (주소 → 좌표 변환)
